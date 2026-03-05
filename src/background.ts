@@ -238,8 +238,7 @@ class PinVaultProBackground {
             console.log('Starting download for:', imageData);
 
             const singleTimestamp = this.formatLocalTimestamp();
-            const filename = this.buildIndexedFilename(
-                1,
+            const filename = this.buildSingleFilename(
                 singleTimestamp,
                 imageData.url,
                 imageData.originalFilename
@@ -665,7 +664,7 @@ class PinVaultProBackground {
 
     generateFilename(imageData, format) {
         const timestamp = this.formatLocalTimestamp();
-        return this.buildIndexedFilename(1, timestamp, imageData.url, imageData.originalFilename);
+        return this.buildSingleFilename(timestamp, imageData.url, imageData.originalFilename);
     }
 
     formatLocalTimestamp(date = new Date()) {
@@ -676,6 +675,11 @@ class PinVaultProBackground {
         const minute = String(date.getMinutes()).padStart(2, '0');
         const second = String(date.getSeconds()).padStart(2, '0');
         return `${year}${month}${day}_${hour}${minute}${second}`;
+    }
+
+    buildSingleFilename(timestamp, url, originalFilename) {
+        const extension = this.resolveImageExtension(url, originalFilename);
+        return `PinPinto-${timestamp}.${extension}`;
     }
 
     buildIndexedFilename(sequence, timestamp, url, originalFilename) {
