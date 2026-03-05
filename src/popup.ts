@@ -653,15 +653,15 @@ class PinVaultProPopup {
     }
 
     openHelp() {
-        chrome.tabs.create({ url: 'https://github.com/inyogeshwar/pinvault-pro-extension#readme' });
+        chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto#readme' });
     }
 
     openFeedback() {
-        chrome.tabs.create({ url: 'mailto:yogeshwar853202@outlook.com?subject=PinPinto%20Feedback' });
+        chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto/issues/new' });
     }
 
     openGithub() {
-        chrome.tabs.create({ url: 'https://github.com/inyogeshwar/pinvault-pro-extension' });
+        chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto' });
     }
 
     showConnected() {

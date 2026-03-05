@@ -62,12 +62,12 @@ class PinVaultProSidebar {
 
         document.getElementById('feedbackLink')?.addEventListener('click', (e) => {
             e.preventDefault();
-            chrome.tabs.create({ url: 'mailto:yogeshwar853202@outlook.com?subject=PinPinto%20Feedback' });
+            chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto/issues/new' });
         });
 
         document.getElementById('githubLink')?.addEventListener('click', (e) => {
             e.preventDefault();
-            chrome.tabs.create({ url: 'https://github.com/inyogeshwar/pinvault-pro-extension' });
+            chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto' });
         });
     }
 
