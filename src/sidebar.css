@@ -92,6 +92,11 @@ body {
     margin-bottom: 32px;
 }
 
+.header-actions {
+    margin-left: auto;
+    position: relative;
+}
+
 .logo-wrapper {
     width: 40px;
     height: 40px;
@@ -255,6 +260,12 @@ body {
     padding: 12px;
     text-decoration: none;
     width: 100%;
+}
+
+.btn.icon-only {
+    width: 34px;
+    height: 34px;
+    padding: 0;
 }
 
 .btn:disabled {
@@ -515,6 +526,53 @@ body {
     height: 3px;
     border-radius: 50%;
     background: var(--border-strong);
+}
+
+.settings-dropdown {
+    position: relative;
+}
+
+.settings-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 190px;
+    background: rgba(14, 14, 18, 0.98);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+    padding: 6px;
+    z-index: 40;
+}
+
+.settings-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+}
+
+.settings-item:hover {
+    background: var(--bg-surface-hover);
+}
+
+.settings-item-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-value {
+    color: var(--text-secondary);
+    font-size: 11px;
 }
 
 /* Entrance Animations */

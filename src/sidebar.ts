@@ -7,15 +7,85 @@ class PinVaultProSidebar {
     autoScrollStatsTimer: number | null = null;
     batchCount: number = 0;
     isBatchingNow: boolean = false;
+    language: 'en' | 'zh' = 'en';
+    translations: Record<'en' | 'zh', Record<string, string>> = {
+        en: {
+            'status.connected': 'Connected to Pinterest',
+            'status.notConnected': 'Not a Pinterest page',
+            'status.error': 'Connection check failed',
+            'alert.openPinterestFirst': 'Please open Pinterest first.',
+            'alert.noImages': 'No downloadable images were detected.',
+            'alert.selectFirst': 'Please select images first.',
+            'alert.downloadStartFailed': 'Failed to start download:',
+            'alert.downloadFailed': 'Download failed:',
+            'progress.preparing': 'Preparing download...',
+            'menu.language': 'Language',
+            'menu.github': 'GitHub',
+            'menu.currentLanguage': 'English',
+            'state.batchComplete': 'Batch download complete (3 rounds).'
+        },
+        zh: {
+            'status.connected': '已连接 Pinterest',
+            'status.notConnected': '非 Pinterest 页面',
+            'status.error': '连接检查失败，请重试',
+            'alert.openPinterestFirst': '请先打开 Pinterest。',
+            'alert.noImages': '未检测到可下载图片。',
+            'alert.selectFirst': '请先选图。',
+            'alert.downloadStartFailed': '启动下载失败：',
+            'alert.downloadFailed': '下载失败：',
+            'progress.preparing': '准备下载...',
+            'menu.language': '语言',
+            'menu.github': 'GitHub',
+            'menu.currentLanguage': '中文',
+            'state.batchComplete': '分批下载完成（3轮）。'
+        }
+    };
+    staticTranslations: Record<'en' | 'zh', Record<string, string>> = {
+        en: {
+            'stats.total': 'Images',
+            'stats.selected': 'Selected',
+            'panel.actions': 'Actions',
+            'action.selectAll': 'Select all',
+            'action.clear': 'Clear',
+            'action.downloadSelected': 'Download selected',
+            'panel.preferences': 'Preferences',
+            'setting.highQuality': 'Prefer high quality',
+            'setting.privacyMode': 'Privacy mode',
+            'setting.autoScroll': 'Auto scroll',
+            'setting.autoBatch': 'Auto batch (200, max 3 rounds)',
+            'action.cancelDownload': 'Cancel download',
+            'state.notPinterestTitle': 'Open Pinterest first',
+            'state.notPinterestDesc': 'Switch to a Pinterest page and try again.',
+            'action.openPinterest': 'Open Pinterest'
+        },
+        zh: {
+            'stats.total': '页面图片',
+            'stats.selected': '已选择',
+            'panel.actions': '快捷操作',
+            'action.selectAll': '全选',
+            'action.clear': '清空',
+            'action.downloadSelected': '下载已选',
+            'panel.preferences': '偏好设置',
+            'setting.highQuality': '优先高清图',
+            'setting.privacyMode': '隐私模式',
+            'setting.autoScroll': '自动滚动',
+            'setting.autoBatch': '200图自动下(最多3次)',
+            'action.cancelDownload': '取消下载',
+            'state.notPinterestTitle': '请先打开 Pinterest',
+            'state.notPinterestDesc': '切换到 Pinterest 页面后再试。',
+            'action.openPinterest': '打开 Pinterest'
+        }
+    };
 
     constructor() {
-        this.init();
+        this.init().catch((error) => console.error(error));
     }
 
-    init() {
+    async init() {
+        await this.loadSettings();
         this.setupEventListeners();
+        this.applyLanguage();
         this.checkPinterestStatus();
-        this.loadSettings();
 
         this.statsUpdateTimer = window.setInterval(() => {
             this.updateStats();
@@ -30,6 +100,41 @@ class PinVaultProSidebar {
         document.getElementById('selectAllBtn')?.addEventListener('click', () => this.selectAll());
         document.getElementById('deselectAllBtn')?.addEventListener('click', () => this.deselectAll());
         document.getElementById('downloadBtn')?.addEventListener('click', () => this.startDownload());
+        document.getElementById('settingsBtn')?.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleSettingsMenu();
+        });
+
+        document.getElementById('languageToggleBtn')?.addEventListener('click', async () => {
+            this.language = this.language === 'en' ? 'zh' : 'en';
+            await this.saveSetting('language', this.language);
+            this.applyLanguage();
+            this.checkPinterestStatus();
+            this.closeSettingsMenu();
+        });
+
+        document.getElementById('githubMenuBtn')?.addEventListener('click', () => {
+            chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto' });
+            this.closeSettingsMenu();
+        });
+
+        document.addEventListener('click', (event) => {
+            const target = event.target as Node;
+            const menu = document.getElementById('settingsMenu');
+            const trigger = document.getElementById('settingsBtn');
+            if (!menu || !trigger) return;
+
+            if (!menu.contains(target) && !trigger.contains(target)) {
+                this.closeSettingsMenu();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.closeSettingsMenu();
+            }
+        });
 
         document.getElementById('highQuality')?.addEventListener('change', (e) => {
             this.saveSetting('highQuality', (e.target as HTMLInputElement).checked);
@@ -54,21 +159,47 @@ class PinVaultProSidebar {
         document.getElementById('openPinterestBtn')?.addEventListener('click', () => {
             chrome.tabs.create({ url: 'https://www.pinterest.com' });
         });
+    }
 
-        document.getElementById('helpLink')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+    applyLanguage() {
+        document.documentElement.lang = this.language === 'zh' ? 'zh-CN' : 'en';
+        document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((element) => {
+            const key = element.dataset.i18n;
+            if (!key) return;
+            element.textContent = this.staticTranslations[this.language][key] || key;
         });
 
-        document.getElementById('feedbackLink')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto/issues/new' });
-        });
+        const languageLabel = document.getElementById('currentLanguageLabel');
+        if (languageLabel) {
+            languageLabel.textContent = this.language === 'en' ? 'English' : '中文';
+        }
+    }
 
-        document.getElementById('githubLink')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto' });
-        });
+    t(key: string) {
+        return this.translations[this.language][key] || key;
+    }
+
+    toggleSettingsMenu() {
+        const menu = document.getElementById('settingsMenu');
+        const trigger = document.getElementById('settingsBtn');
+        if (!menu || !trigger) return;
+
+        const isHidden = menu.hasAttribute('hidden');
+        if (isHidden) {
+            menu.removeAttribute('hidden');
+        } else {
+            menu.setAttribute('hidden', '');
+        }
+        trigger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+    }
+
+    closeSettingsMenu() {
+        const menu = document.getElementById('settingsMenu');
+        const trigger = document.getElementById('settingsBtn');
+        if (!menu || !trigger) return;
+
+        menu.setAttribute('hidden', '');
+        trigger.setAttribute('aria-expanded', 'false');
     }
 
     async setTargetTabId(tabId: number | null) {
@@ -123,12 +254,12 @@ class PinVaultProSidebar {
 
             if (isPinterest) {
                 if (statusIndicator) (statusIndicator as HTMLElement).style.background = '#10b981';
-                if (statusText) statusText.textContent = '已连接 Pinterest';
+                if (statusText) statusText.textContent = this.t('status.connected');
                 if (notPinterest) notPinterest.style.display = 'none';
                 this.updateStats();
             } else {
                 if (statusIndicator) (statusIndicator as HTMLElement).style.background = '#f59e0b';
-                if (statusText) statusText.textContent = '非 Pinterest 页面';
+                if (statusText) statusText.textContent = this.t('status.notConnected');
                 if (notPinterest) notPinterest.style.display = 'block';
                 this.resetStats();
             }
@@ -137,7 +268,7 @@ class PinVaultProSidebar {
             const statusIndicator = document.getElementById('statusIndicator');
             const statusText = document.getElementById('statusText');
             if (statusIndicator) (statusIndicator as HTMLElement).style.background = '#ef4444';
-            if (statusText) statusText.textContent = '连接检查失败，请重试';
+            if (statusText) statusText.textContent = this.t('status.error');
         }
     }
 
@@ -346,7 +477,7 @@ class PinVaultProSidebar {
         try {
             const tab = await this.resolveTargetTab();
             if (!tab?.id || !tab.url || !this.isPinterestUrl(tab.url)) {
-                alert('请先打开 Pinterest。');
+                alert(this.t('alert.openPinterestFirst'));
                 return;
             }
 
@@ -395,13 +526,13 @@ class PinVaultProSidebar {
                 if (results?.[0]?.result?.length) {
                     selectedImages = results[0].result;
                 } else {
-                    alert('未检测到可下载图片。');
+                    alert(this.t('alert.noImages'));
                     return;
                 }
             }
 
             if (selectedImages.length === 0) {
-                alert('请先选图。');
+                alert(this.t('alert.selectFirst'));
                 return;
             }
 
@@ -415,20 +546,20 @@ class PinVaultProSidebar {
                 },
                 (response) => {
                     if (chrome.runtime.lastError) {
-                        alert(`启动下载失败：${chrome.runtime.lastError.message}`);
+                        alert(`${this.t('alert.downloadStartFailed')} ${chrome.runtime.lastError.message}`);
                         this.hideProgress();
                         return;
                     }
 
                     if (!response?.success) {
-                        alert(`下载失败：${response?.error || '未知错误'}`);
+                        alert(`${this.t('alert.downloadFailed')} ${response?.error || 'Unknown error'}`);
                         this.hideProgress();
                     }
                 }
             );
         } catch (error) {
             console.error('Error starting download:', error);
-            alert(`下载失败：${error instanceof Error ? error.message : String(error)}`);
+            alert(`${this.t('alert.downloadFailed')} ${error instanceof Error ? error.message : String(error)}`);
             this.hideProgress();
         }
     }
@@ -442,7 +573,7 @@ class PinVaultProSidebar {
         if (progressSection) progressSection.style.display = 'block';
         if (progressFill) (progressFill as HTMLElement).style.width = '0%';
         if (progressText) progressText.textContent = '0%';
-        if (progressDetails) progressDetails.textContent = '准备下载...';
+        if (progressDetails) progressDetails.textContent = this.t('progress.preparing');
     }
 
     hideProgress() {
@@ -468,11 +599,14 @@ class PinVaultProSidebar {
     async loadSettings() {
         try {
             const settings = await chrome.storage.sync.get({
+                language: 'en',
                 highQuality: true,
                 privacyMode: false,
                 autoScroll: false,
                 autoBatchDownload: false
             });
+
+            this.language = settings.language === 'zh' ? 'zh' : 'en';
 
             (document.getElementById('highQuality') as HTMLInputElement).checked = settings.highQuality !== false;
             (document.getElementById('privacyMode') as HTMLInputElement).checked = settings.privacyMode === true;
@@ -556,7 +690,7 @@ chrome.runtime.onMessage.addListener((message) => {
                     }
 
                     setTimeout(() => {
-                        alert('分批下载完成（3轮）。');
+                        alert(sidebar.t('state.batchComplete'));
                     }, 500);
                 }
             })().catch((error) => console.error(error));
@@ -564,7 +698,7 @@ chrome.runtime.onMessage.addListener((message) => {
     } else if (message.action === 'downloadError') {
         sidebar.hideProgress();
         sidebar.isBatchingNow = false;
-        alert(`打包下载失败：${message.error}`);
+        alert(`${sidebar.t('alert.downloadFailed')} ${message.error}`);
     }
 });
 

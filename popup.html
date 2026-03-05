@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+﻿<!DOCTYPE html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -7,8 +7,7 @@
     <title>PinPinto</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/popup.css">
 </head>
 
@@ -18,30 +17,42 @@
         <header class="header">
             <div class="logo-section">
                 <div class="logo-wrapper">
-                    <img src="icons/icon32.png" alt="Logo" class="logo">
+                    <img src="icons/icon32.png" alt="PinPinto logo" class="logo">
                 </div>
                 <div class="title-group">
                     <h1>PinPinto</h1>
-                    <span class="subtitle">Pinterest 下载�?/span>
+                    <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-                <span class="badge-version">v1.3.1</span>
+                <span class="badge-version">v1.3.2</span>
             </div>
             <div class="header-actions">
-                <button class="icon-btn" id="themeToggle" title="切换主题" style="display:none;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="icon-svg">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2"
-                            stroke-linecap="round" stroke-linejoin="round"></path>
+                <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="icon-svg" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
                     </svg>
                 </button>
-                <button class="icon-btn" id="settingsBtn" title="高级设置">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="icon-svg">
-                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"></circle>
-                        <path
-                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        </path>
-                    </svg>
-                </button>
+                <div class="settings-dropdown">
+                    <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings" aria-haspopup="menu" aria-expanded="false">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="icon-svg" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                    </button>
+                    <div class="settings-menu panel-hidden" id="settingsMenu" role="menu">
+                        <button class="settings-item" id="languageToggleBtn" type="button" role="menuitem">
+                            <span data-i18n="menu.language">Language</span>
+                            <span class="settings-value" id="currentLanguageLabel">English</span>
+                        </button>
+                        <button class="settings-item" id="githubMenuBtn" type="button" role="menuitem">
+                            <span class="settings-item-left">
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                    <path d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.64 7.64 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+                                </svg>
+                                <span data-i18n="menu.github">GitHub</span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -57,97 +68,100 @@
         <div class="status-bar">
             <div class="connection-status" id="connectionStatus">
                 <span class="status-indicator" id="statusIndicator"></span>
-                <span id="statusText" class="status-text">检查中...</span>
+                <span id="statusText" class="status-text">Checking...</span>
             </div>
         </div>
 
         <main class="main-content" id="mainContent">
             <div class="stats-dash">
                 <div class="stat-box">
-                    <span class="stat-label">页面图片</span>
+                    <span class="stat-label" data-i18n="stats.total">Images</span>
                     <span class="stat-value" id="totalImages">0</span>
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat-box">
-                    <span class="stat-label accent-label">已选择</span>
+                    <span class="stat-label accent-label" data-i18n="stats.selected">Selected</span>
                     <span class="stat-value accent-value" id="selectedCount">0</span>
                 </div>
             </div>
 
             <div class="action-grid">
                 <button class="btn btn-outline" id="selectAllBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
-                    <span>全�?/span>
+                    <span data-i18n="action.selectAll">Select all</span>
                 </button>
                 <button class="btn btn-outline" id="deselectAllBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                         <line x1="9" y1="9" x2="15" y2="15"></line>
                         <line x1="15" y1="9" x2="9" y2="15"></line>
                     </svg>
-                    <span>清空</span>
+                    <span data-i18n="action.clear">Clear</span>
                 </button>
                 <button class="btn btn-outline" id="openSidebarBtn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                         <line x1="9" y1="3" x2="9" y2="21"></line>
                     </svg>
-                    <span>侧边�?/span>
+                    <span data-i18n="action.sidebar">Sidebar</span>
                 </button>
             </div>
 
             <div class="auto-scroll-zone">
-                <div class="toggle-wrapper">
-                    <label class="switch">
-                        <input type="checkbox" id="autoScrollToggle">
-                        <span class="slider round"></span>
-                    </label>
-                    <span class="toggle-text">自动滚动</span>
-                </div>
-                <div class="toggle-wrapper" style="margin-top: 8px;">
-                    <label class="switch">
-                        <input type="checkbox" id="autoBatchToggle">
-                        <span class="slider round"></span>
-                    </label>
-                    <span class="toggle-text" style="font-size: 13px; color: var(--text-secondary);">200图自动下(最�?�?</span>
+                <div>
+                    <div class="toggle-wrapper">
+                        <label class="switch">
+                            <input type="checkbox" id="autoScrollToggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-text" data-i18n="setting.autoScroll">Auto scroll</span>
+                    </div>
+                    <div class="toggle-wrapper" style="margin-top: 8px;">
+                        <label class="switch">
+                            <input type="checkbox" id="autoBatchToggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span class="toggle-text" id="autoBatchLabel" style="font-size: 13px; color: var(--text-secondary);" data-i18n="setting.autoBatch">Auto batch (200, max 3 rounds)</span>
+                    </div>
                 </div>
                 <button class="btn btn-ghost" id="stopScrollBtn" disabled>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <rect x="6" y="4" width="4" height="16"></rect>
                         <rect x="14" y="4" width="4" height="16"></rect>
                     </svg>
-                    停止
+                    <span data-i18n="action.stop">Stop</span>
                 </button>
             </div>
 
             <div class="download-section">
-                <div class="settings-panel panel-hidden" id="advancedFeaturesPanel">
-                    <div class="panel-header">下载设置</div>
+                <div class="settings-panel" id="advancedFeaturesPanel">
+                    <div class="panel-header" data-i18n="panel.downloadSettings">Download settings</div>
 
                     <label class="checkbox-row">
                         <div class="custom-checkbox">
                             <input type="checkbox" id="highQuality" checked>
                             <span class="checkmark">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
                                     <polyline points="20 6 9 17 4 12"></polyline>
                                 </svg>
                             </span>
                         </div>
-                        <span class="checkbox-text">优先下载高清�?/span>
+                        <span class="checkbox-text" data-i18n="setting.highQuality">Prefer high quality</span>
                     </label>
+
                     <label class="checkbox-row">
                         <div class="custom-checkbox">
                             <input type="checkbox" id="privacyMode">
                             <span class="checkmark">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
                                     <polyline points="20 6 9 17 4 12"></polyline>
                                 </svg>
                             </span>
                         </div>
-                        <span class="checkbox-text">隐私模式</span>
+                        <span class="checkbox-text" data-i18n="setting.privacyMode">Privacy mode</span>
                     </label>
 
                     <input type="checkbox" id="advancedFeaturesToggle" style="display:none;">
@@ -165,39 +179,39 @@
                 </div>
 
                 <button class="btn btn-primary btn-large" id="downloadBtn" disabled>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
-                    <span>下载已�?/span>
+                    <span data-i18n="action.downloadSelected">Download selected</span>
                     <span class="badge-count" id="downloadCount">(0)</span>
                 </button>
             </div>
 
             <div class="progress-zone" id="progressSection" style="display: none;">
                 <div class="progress-info">
-                    <span class="progress-status" id="progressDetails">准备下载...</span>
+                    <span class="progress-status" id="progressDetails">Preparing download...</span>
                     <span class="progress-percent" id="progressText">0%</span>
                 </div>
                 <div class="progress-track">
                     <div class="progress-fill" id="progressFill"></div>
                 </div>
-                <button class="btn btn-ghost danger-text" id="cancelDownloadBtn">取消下载</button>
+                <button class="btn btn-ghost danger-text" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
             </div>
         </main>
 
         <div class="state-container" id="notPinterest" style="display: none;">
             <div class="state-icon">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="2" y1="12" x2="22" y2="12"></line>
                     <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
                 </svg>
             </div>
-            <h3 class="state-title">请先打开 Pinterest</h3>
-            <p class="state-desc">当前页不�?Pinterest�?br>切换后再下载�?/p>
-            <button class="btn btn-primary" id="openPinterestBtn">打开 Pinterest</button>
+            <h3 class="state-title" data-i18n="state.notPinterestTitle">Open Pinterest first</h3>
+            <p class="state-desc" data-i18n="state.notPinterestDesc">Current tab is not Pinterest.</p>
+            <button class="btn btn-primary" id="openPinterestBtn" data-i18n="action.openPinterest">Open Pinterest</button>
         </div>
 
         <div id="proFeatures" style="display:none;"></div>
@@ -207,7 +221,3 @@
 </body>
 
 </html>
-
-
-
-

@@ -1,7 +1,9 @@
 ﻿import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 
+type SupportedLanguage = 'en' | 'zh';
+
 type PopupSettings = {
-    language: string;
+    language: SupportedLanguage;
     highQuality: boolean;
     privacyMode: boolean;
     autoScroll: boolean;
@@ -24,8 +26,9 @@ class PinVaultProPopup {
     isAutoScrolling: boolean;
     autoScrollStatsTimer: number | null;
     statsUpdateTimer: number | null;
-    language: 'zh';
+    language: SupportedLanguage;
     translations: Record<string, { checkingPinterest: string; connected: string; notConnected: string }>;
+    staticTranslations: Record<SupportedLanguage, Record<string, string>>;
 
     constructor() {
         this.selectedImages = new Set();
@@ -33,12 +36,61 @@ class PinVaultProPopup {
         this.isAutoScrolling = false;
         this.autoScrollStatsTimer = null;
         this.statsUpdateTimer = null;
-        this.language = 'zh';
+        this.language = 'en';
         this.translations = {
+            en: {
+                checkingPinterest: 'Checking...',
+                connected: 'Connected to Pinterest',
+                notConnected: 'Not a Pinterest page'
+            },
             zh: {
                 checkingPinterest: '检查中...',
                 connected: '已连接 Pinterest',
                 notConnected: '非 Pinterest 页面'
+            }
+        };
+        this.staticTranslations = {
+            en: {
+                'app.subtitle': 'Pinterest Downloader',
+                'stats.total': 'Images',
+                'stats.selected': 'Selected',
+                'action.selectAll': 'Select all',
+                'action.clear': 'Clear',
+                'action.sidebar': 'Sidebar',
+                'setting.autoScroll': 'Auto scroll',
+                'setting.autoBatch': 'Auto batch (200, max 3 rounds)',
+                'action.stop': 'Stop',
+                'panel.downloadSettings': 'Download settings',
+                'setting.highQuality': 'Prefer high quality',
+                'setting.privacyMode': 'Privacy mode',
+                'action.downloadSelected': 'Download selected',
+                'action.cancelDownload': 'Cancel download',
+                'state.notPinterestTitle': 'Open Pinterest first',
+                'state.notPinterestDesc': 'Current tab is not Pinterest.',
+                'action.openPinterest': 'Open Pinterest',
+                'menu.language': 'Language',
+                'menu.github': 'GitHub'
+            },
+            zh: {
+                'app.subtitle': 'Pinterest 下载器',
+                'stats.total': '页面图片',
+                'stats.selected': '已选择',
+                'action.selectAll': '全选',
+                'action.clear': '清空',
+                'action.sidebar': '侧边栏',
+                'setting.autoScroll': '自动滚动',
+                'setting.autoBatch': '200图自动下(最多3次)',
+                'action.stop': '停止',
+                'panel.downloadSettings': '下载设置',
+                'setting.highQuality': '优先下载高清图',
+                'setting.privacyMode': '隐私模式',
+                'action.downloadSelected': '下载已选',
+                'action.cancelDownload': '取消下载',
+                'state.notPinterestTitle': '请先打开 Pinterest',
+                'state.notPinterestDesc': '当前页不是 Pinterest。',
+                'action.openPinterest': '打开 Pinterest',
+                'menu.language': '语言',
+                'menu.github': 'GitHub'
             }
         };
 
@@ -55,13 +107,13 @@ class PinVaultProPopup {
 
     async loadSettings() {
         const settings = (await chrome.storage.sync.get({
-            language: 'zh',
+            language: 'en',
             highQuality: true,
             privacyMode: false,
             autoScroll: false,
             autoBatchDownload: false,
             theme: 'default',
-            advancedFeaturesEnabled: false,
+            advancedFeaturesEnabled: true,
             smartFeaturesEnabled: false,
             autoDownloadScheduler: false,
             batchProcessing: false,
@@ -70,7 +122,7 @@ class PinVaultProPopup {
             customWatermark: false
         })) as PopupSettings;
 
-        this.language = 'zh';
+        this.language = settings.language === 'zh' ? 'zh' : 'en';
         (document.getElementById('highQuality') as HTMLInputElement).checked = settings.highQuality;
         (document.getElementById('privacyMode') as HTMLInputElement).checked = settings.privacyMode;
         (document.getElementById('autoScrollToggle') as HTMLInputElement).checked = settings.autoScroll;
@@ -111,8 +163,34 @@ class PinVaultProPopup {
         document.getElementById('openSidebarBtn')?.addEventListener('click', () => this.openSidebar());
         document.getElementById('settingsBtn')?.addEventListener('click', (event) => {
             event.preventDefault();
-            const panel = document.getElementById('advancedFeaturesPanel');
-            panel?.classList.toggle('panel-hidden');
+            event.stopPropagation();
+            this.toggleSettingsMenu();
+        });
+
+        document.getElementById('languageToggleBtn')?.addEventListener('click', () => {
+            this.toggleLanguage();
+        });
+
+        document.getElementById('githubMenuBtn')?.addEventListener('click', () => {
+            this.openGithub();
+            this.closeSettingsMenu();
+        });
+
+        document.addEventListener('click', (event) => {
+            const target = event.target as Node;
+            const menu = document.getElementById('settingsMenu');
+            const trigger = document.getElementById('settingsBtn');
+            if (!menu || !trigger) return;
+
+            if (!menu.contains(target) && !trigger.contains(target)) {
+                this.closeSettingsMenu();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.closeSettingsMenu();
+            }
         });
 
         document.getElementById('autoScrollToggle')?.addEventListener('change', (e) => {
@@ -160,16 +238,53 @@ class PinVaultProPopup {
         });
 
         document.getElementById('openPinterestBtn')?.addEventListener('click', () => this.openPinterest());
-        document.getElementById('helpLink')?.addEventListener('click', () => this.openHelp());
-        document.getElementById('feedbackLink')?.addEventListener('click', () => this.openFeedback());
-        document.getElementById('githubLink')?.addEventListener('click', () => this.openGithub());
     }
 
     updateLanguage() {
+        document.documentElement.lang = this.language === 'zh' ? 'zh-CN' : 'en';
+
+        document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((element) => {
+            const key = element.dataset.i18n;
+            if (!key) return;
+            element.textContent = this.staticTranslations[this.language][key] || key;
+        });
+
         const statusText = document.getElementById('statusText');
-        if (statusText) {
+        if (statusText && !document.getElementById('connectionStatus')?.classList.contains('connected') && !document.getElementById('connectionStatus')?.classList.contains('not-connected')) {
             statusText.textContent = this.translations[this.language].checkingPinterest;
         }
+
+        const languageLabel = document.getElementById('currentLanguageLabel');
+        if (languageLabel) {
+            languageLabel.textContent = this.language === 'en' ? 'English' : '中文';
+        }
+    }
+
+    toggleSettingsMenu() {
+        const menu = document.getElementById('settingsMenu');
+        const trigger = document.getElementById('settingsBtn');
+        if (!menu || !trigger) return;
+
+        const isHidden = menu.classList.contains('panel-hidden');
+        menu.classList.toggle('panel-hidden', !isHidden);
+        trigger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+    }
+
+    closeSettingsMenu() {
+        const menu = document.getElementById('settingsMenu');
+        const trigger = document.getElementById('settingsBtn');
+        if (!menu || !trigger) return;
+
+        menu.classList.add('panel-hidden');
+        trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    async toggleLanguage() {
+        this.language = this.language === 'en' ? 'zh' : 'en';
+        await this.saveSetting('language', this.language);
+        this.updateLanguage();
+        await this.checkPinterestConnection();
+        this.closeSettingsMenu();
     }
 
     setupPeriodicUpdates() {
@@ -421,7 +536,7 @@ class PinVaultProPopup {
         try {
             const tab = await this.getActivePinterestTab();
             if (!tab?.id) {
-                alert('请先打开 Pinterest。');
+                alert(this.language === 'zh' ? '请先打开 Pinterest。' : 'Please open Pinterest first.');
                 return;
             }
 
@@ -472,7 +587,7 @@ class PinVaultProPopup {
             }
 
             if (selectedImages.length === 0) {
-                alert('请先选图。');
+                alert(this.language === 'zh' ? '请先选图。' : 'Please select images first.');
                 return;
             }
 
@@ -486,20 +601,23 @@ class PinVaultProPopup {
                 },
                 (response) => {
                     if (chrome.runtime.lastError) {
-                        alert(`启动下载失败：${chrome.runtime.lastError.message}`);
+                        const prefix = this.language === 'zh' ? '启动下载失败：' : 'Failed to start download: ';
+                        alert(`${prefix}${chrome.runtime.lastError.message}`);
                         this.hideProgress();
                         return;
                     }
 
                     if (!response?.success) {
-                        alert(`下载失败：${response?.error || '未知错误'}`);
+                        const prefix = this.language === 'zh' ? '下载失败：' : 'Download failed: ';
+                        alert(`${prefix}${response?.error || 'Unknown error'}`);
                         this.hideProgress();
                     }
                 }
             );
         } catch (error) {
             console.error('Error starting download:', error);
-            alert(`下载失败：${error instanceof Error ? error.message : String(error)}`);
+            const prefix = this.language === 'zh' ? '下载失败：' : 'Download failed: ';
+            alert(`${prefix}${error instanceof Error ? error.message : String(error)}`);
             this.hideProgress();
         }
     }
@@ -518,7 +636,7 @@ class PinVaultProPopup {
         if (progressSection) progressSection.style.display = 'block';
         if (progressFill) (progressFill as HTMLElement).style.width = '0%';
         if (progressText) progressText.textContent = '0%';
-        if (progressDetails) progressDetails.textContent = '准备下载...';
+        if (progressDetails) progressDetails.textContent = this.language === 'zh' ? '准备下载...' : 'Preparing download...';
     }
 
     hideProgress() {
@@ -736,7 +854,8 @@ chrome.runtime.onMessage.addListener((message) => {
         popupInstance.updateImageCounts();
     } else if (message.action === 'downloadError') {
         popupInstance.hideProgress();
-        alert(`下载失败：${message.error}`);
+        const prefix = popupInstance.language === 'zh' ? '下载失败：' : 'Download failed: ';
+        alert(`${prefix}${message.error}`);
     }
 });
 
