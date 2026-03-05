@@ -7,14 +7,12 @@ class PinVaultProBackground {
     downloadQueue: any[];
     isProcessingQueue: boolean;
     maxConcurrentDownloads: number;
-    downloadedUrls: Set<string>;
 
     constructor() {
         this.activeDownloads = new Map();
         this.downloadQueue = [];
         this.isProcessingQueue = false;
         this.maxConcurrentDownloads = 3;
-        this.downloadedUrls = new Set();
 
         this.init();
     }
@@ -271,14 +269,17 @@ class PinVaultProBackground {
         }
 
         const uniqueImages = [];
+        const currentBatchUrls = new Set<string>();
         let duplicateCount = 0;
 
         for (const image of imageList) {
             const imageUrl = this.normalizeImageUrlForDeduplication(image, settings);
             if (!imageUrl) continue;
 
-            if (!this.downloadedUrls.has(imageUrl)) {
-                this.downloadedUrls.add(imageUrl);
+            // Only dedupe within the current user action.
+            // Cross-run dedupe causes "no reaction" after a failed batch.
+            if (!currentBatchUrls.has(imageUrl)) {
+                currentBatchUrls.add(imageUrl);
                 uniqueImages.push(image);
             } else {
                 duplicateCount++;

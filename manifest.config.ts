@@ -4,7 +4,7 @@ import { PINIMG_MATCH_PATTERNS, PINTEREST_MATCH_PATTERNS } from './src/shared/pi
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest 下载器',
-  version: '1.2.6',
+  version: '1.2.7',
   description: 'Pinterest 图片批量下载，支持自动滚动与打包。',
   permissions: ['downloads', 'storage', 'contextMenus', 'activeTab', 'scripting', 'sidePanel', 'windows'],
   host_permissions: [...PINTEREST_MATCH_PATTERNS, ...PINIMG_MATCH_PATTERNS],
