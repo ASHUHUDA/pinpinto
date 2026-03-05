@@ -1,4 +1,4 @@
-﻿import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
 

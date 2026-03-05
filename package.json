@@ -1,6 +1,6 @@
 {
   "name": "pinpinto",
-  "version": "1.3.8",
+  "version": "1.3.9",
   "description": "",
   "main": "background.js",
   "scripts": {
@@ -8,7 +8,7 @@
     "icon:build": "node resize_icons.js",
     "typecheck": "tsc --noEmit",
     "verify": "tsc --noEmit && vite build",
-    "build": "vite build"
+    "build": "vite build && node scripts/package-artifact.mjs --browser=chrome --source=dist --format=zip"
   },
   "keywords": [],
   "author": "",
@@ -25,6 +25,7 @@
     "jszip": "^3.10.1"
   }
 }
+
 
 
 

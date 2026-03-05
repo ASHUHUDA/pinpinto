@@ -1,4 +1,4 @@
-﻿// Content script for PinPinto Extension
+// Content script for PinPinto Extension
 console.log('PinPinto content script: Starting to load...');
 
 import { createOverlayControls as createImageOverlayControls } from './content/overlay-controls';
