@@ -1,0 +1,26 @@
+﻿# dependencies
+node_modules/
+
+# build outputs
+dist/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# env
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agent/
+
+# planning artifacts
+task_plan.md
+findings.md
+progress.md

@@ -1,0 +1,26 @@
+{
+  "name": "pinpinto",
+  "version": "1.2.2",
+  "description": "",
+  "main": "background.js",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "verify": "tsc --noEmit && vite build",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.3.0",
+    "@types/chrome": "^0.1.37",
+    "sharp": "^0.34.5",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}
