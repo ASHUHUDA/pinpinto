@@ -23,7 +23,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-                <span class="badge-version">v1.3.4</span>
+                <span class="badge-version">v1.3.5</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -187,17 +187,17 @@
                     <span data-i18n="action.downloadSelected">Download selected</span>
                     <span class="badge-count" id="downloadCount">(0)</span>
                 </button>
-            </div>
 
-            <div class="progress-zone" id="progressSection" style="display: none;">
-                <div class="progress-info">
-                    <span class="progress-status" id="progressDetails">Preparing download...</span>
-                    <span class="progress-percent" id="progressText">0%</span>
+                <div class="progress-zone" id="progressSection" style="display: none;">
+                    <div class="progress-info">
+                        <span class="progress-status" id="progressDetails">Preparing download...</span>
+                        <span class="progress-percent" id="progressText">0%</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <button class="btn btn-ghost danger-text" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
                 </div>
-                <div class="progress-track">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <button class="btn btn-ghost danger-text" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
             </div>
         </main>
 
