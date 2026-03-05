@@ -154,7 +154,8 @@ class PinVaultProBackground {
             }
         } catch (error) {
             console.error('Error handling message:', error);
-            sendResponse({ error: error.message });
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            sendResponse({ error: errorMessage });
         }
     }
 
@@ -203,7 +204,7 @@ class PinVaultProBackground {
 
             // Prepare image data
             const imageData = {
-                url: this.getHighQualityUrl(imageUrl),
+                url: settings.highQuality === false ? imageUrl : this.getHighQualityUrl(imageUrl),
                 title: this.extractTitleFromUrl(imageUrl) || 'Pinterest Image',
                 board: 'Pinterest',
                 originalFilename: this.extractFilenameFromUrl(imageUrl)
@@ -260,14 +261,21 @@ class PinVaultProBackground {
     }
 
     async downloadMultipleImages(images, settings) {
+        const imageList = Array.isArray(images) ? images : [];
+        if (imageList.length === 0) {
+            this.sendProgressUpdate(100, '未接收到可下载图片。');
+            setTimeout(() => {
+                this.sendMessageToAllExtensionPages({ action: 'downloadComplete', results: [] });
+            }, 500);
+            return [];
+        }
+
         const uniqueImages = [];
         let duplicateCount = 0;
 
-        for (const image of images) {
-            let imageUrl = image.url || image;
-            if (typeof imageUrl === 'string' && imageUrl.includes('pinimg.com')) {
-                imageUrl = this.getHighQualityUrl(imageUrl);
-            }
+        for (const image of imageList) {
+            const imageUrl = this.normalizeImageUrlForDeduplication(image, settings);
+            if (!imageUrl) continue;
 
             if (!this.downloadedUrls.has(imageUrl)) {
                 this.downloadedUrls.add(imageUrl);
@@ -291,6 +299,8 @@ class PinVaultProBackground {
 
         const results = [];
         let completedImages = 0;
+        let successfulImages = 0;
+        let failedImages = 0;
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const folderName = `PinPinto_${timestamp}`;
@@ -299,50 +309,57 @@ class PinVaultProBackground {
         console.log(`Starting download of ${totalImages} images as ZIP: ${zipName}`);
         this.sendProgressUpdate(0, `开始打包 ${totalImages} 张图片，请稍候...`);
 
-        const batchSize = Number(settings.maxConcurrentDownloads) || this.maxConcurrentDownloads;
+        const parsedBatchSize = Number(settings?.maxConcurrentDownloads);
+        const batchSize = Number.isFinite(parsedBatchSize) && parsedBatchSize > 0
+            ? Math.floor(parsedBatchSize)
+            : this.maxConcurrentDownloads;
         const zip = new JSZip();
+        const usedFilenames = new Set();
 
         for (let i = 0; i < images.length; i += batchSize) {
             const batch = images.slice(i, i + batchSize);
             const batchPromises = batch.map(async (image, batchIndex) => {
                 try {
-                    let imageUrl = image.url || image;
-                    if (typeof imageUrl === 'string' && imageUrl.includes('pinimg.com')) {
-                        imageUrl = this.getHighQualityUrl(imageUrl);
+                    const sourceUrl = typeof image === 'string' ? image : image.url;
+                    const candidateUrls = this.getDownloadCandidateUrls(sourceUrl, settings.highQuality !== false);
+                    if (candidateUrls.length === 0) {
+                        throw new Error('图片 URL 无效');
                     }
+
+                    const { arrayBuffer, resolvedUrl } = await this.fetchImageArrayBuffer(candidateUrls);
 
                     const imageData = {
-                        url: imageUrl,
-                        title: image.title || `Image_${i + batchIndex + 1}`,
-                        board: image.board || 'Pinterest',
+                        url: resolvedUrl,
+                        title: typeof image === 'string' ? `Image_${i + batchIndex + 1}` : (image.title || `Image_${i + batchIndex + 1}`),
+                        board: typeof image === 'string' ? 'Pinterest' : (image.board || 'Pinterest'),
                         folder: folderName,
-                        originalFilename: image.originalFilename || this.extractFilenameFromUrl(imageUrl)
+                        originalFilename: typeof image === 'string'
+                            ? this.extractFilenameFromUrl(resolvedUrl)
+                            : (image.originalFilename || this.extractFilenameFromUrl(resolvedUrl))
                     };
 
-                    const response = await fetch(imageData.url);
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const arrayBuffer = await response.arrayBuffer();
                     const filename = this.generateFilename(imageData, settings.filenameFormat);
-                    zip.file(filename, arrayBuffer);
+                    const uniqueFilename = this.ensureUniqueFilename(filename, usedFilenames);
+                    zip.file(uniqueFilename, arrayBuffer);
 
                     completedImages++;
+                    successfulImages++;
                     const progress = (completedImages / totalImages) * 50;
                     this.sendProgressUpdate(progress, `已获取 ${completedImages}/${totalImages} 张图片`);
 
-                    return { success: true, imageId: image.id || `img_${i + batchIndex}` };
+                    const imageId = typeof image === 'string' ? `img_${i + batchIndex}` : (image.id || `img_${i + batchIndex}`);
+                    return { success: true, imageId };
                 } catch (error) {
                     completedImages++;
+                    failedImages++;
                     const progress = (completedImages / totalImages) * 50;
-                    const failedCount = completedImages - results.filter(r => r.success).length;
-                    this.sendProgressUpdate(progress, `已处理 ${completedImages}/${totalImages} 张（失败 ${failedCount} 张）`);
+                    this.sendProgressUpdate(progress, `已处理 ${completedImages}/${totalImages} 张（失败 ${failedImages} 张）`);
 
+                    const imageId = typeof image === 'string' ? `img_${i + batchIndex}` : (image.id || `img_${i + batchIndex}`);
                     return {
                         success: false,
                         error: error instanceof Error ? error.message : String(error),
-                        imageId: image.id || `img_${i + batchIndex}`
+                        imageId
                     };
                 }
             });
@@ -353,6 +370,16 @@ class PinVaultProBackground {
             if (i + batchSize < images.length) {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
+        }
+
+        // 全部下载失败时不生成空 ZIP，直接回传错误给 UI。
+        if (successfulImages === 0) {
+            const errorMessage = '图片下载全部失败，未生成压缩包。';
+            this.sendProgressUpdate(100, errorMessage);
+            setTimeout(() => {
+                this.sendMessageToAllExtensionPages({ action: 'downloadError', error: errorMessage, results });
+            }, 500);
+            return results;
         }
 
         this.sendProgressUpdate(60, '图片获取完成，正在压缩打包...');
@@ -412,6 +439,89 @@ class PinVaultProBackground {
 
             return results;
         }
+    }
+
+    normalizeImageUrlForDeduplication(image, settings) {
+        const rawUrl = typeof image === 'string' ? image : image?.url;
+        if (typeof rawUrl !== 'string' || !rawUrl) {
+            return '';
+        }
+
+        if (settings?.highQuality === false || !rawUrl.includes('pinimg.com')) {
+            return rawUrl;
+        }
+
+        return this.getHighQualityUrl(rawUrl);
+    }
+
+    getDownloadCandidateUrls(rawUrl, highQualityEnabled) {
+        if (typeof rawUrl !== 'string' || !rawUrl) {
+            return [];
+        }
+
+        const candidates = [];
+        if (highQualityEnabled && rawUrl.includes('pinimg.com')) {
+            const highQualityUrl = this.getHighQualityUrl(rawUrl);
+            candidates.push(highQualityUrl);
+            if (highQualityUrl !== rawUrl) {
+                candidates.push(rawUrl);
+            }
+        } else {
+            candidates.push(rawUrl);
+        }
+
+        return Array.from(new Set(candidates));
+    }
+
+    async fetchImageArrayBuffer(candidateUrls) {
+        let lastError = new Error('图片获取失败');
+
+        // 先尝试高清 URL，再回退原始 URL，避免因某些图片没有 originals 目录导致整批失败。
+        for (const url of candidateUrls) {
+            try {
+                const response = await fetch(url, { cache: 'no-store' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType && !contentType.startsWith('image/')) {
+                    throw new Error(`非图片响应: ${contentType}`);
+                }
+
+                const arrayBuffer = await response.arrayBuffer();
+                if (arrayBuffer.byteLength === 0) {
+                    throw new Error('图片内容为空');
+                }
+
+                return { arrayBuffer, resolvedUrl: url };
+            } catch (error) {
+                lastError = error instanceof Error ? error : new Error(String(error));
+            }
+        }
+
+        throw lastError;
+    }
+
+    ensureUniqueFilename(filename, usedFilenames) {
+        if (!usedFilenames.has(filename)) {
+            usedFilenames.add(filename);
+            return filename;
+        }
+
+        const dotIndex = filename.lastIndexOf('.');
+        const baseName = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
+        const extension = dotIndex >= 0 ? filename.slice(dotIndex) : '';
+
+        let index = 2;
+        let candidate = `${baseName}_${index}${extension}`;
+        while (usedFilenames.has(candidate)) {
+            index++;
+            candidate = `${baseName}_${index}${extension}`;
+        }
+
+        usedFilenames.add(candidate);
+        return candidate;
     }
 
     async cancelDownload(downloadId) {
