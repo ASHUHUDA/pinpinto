@@ -109,6 +109,11 @@ class PinVaultProPopup {
         document.getElementById('selectAllBtn')?.addEventListener('click', () => this.selectAllImages());
         document.getElementById('deselectAllBtn')?.addEventListener('click', () => this.deselectAllImages());
         document.getElementById('openSidebarBtn')?.addEventListener('click', () => this.openSidebar());
+        document.getElementById('settingsBtn')?.addEventListener('click', (event) => {
+            event.preventDefault();
+            const panel = document.getElementById('advancedFeaturesPanel');
+            panel?.classList.toggle('panel-hidden');
+        });
 
         document.getElementById('autoScrollToggle')?.addEventListener('change', (e) => {
             this.toggleAutoScroll((e.target as HTMLInputElement).checked);
@@ -235,9 +240,15 @@ class PinVaultProPopup {
         }
 
         try {
+            const contentScriptFile = this.getPrimaryContentScriptFile();
+            if (!contentScriptFile) {
+                console.error('Content script path not found in manifest.');
+                return false;
+            }
+
             await chrome.scripting.executeScript({
                 target: { tabId },
-                files: ['content.js']
+                files: [contentScriptFile]
             });
             await new Promise((resolve) => setTimeout(resolve, 500));
             return true;
@@ -245,6 +256,13 @@ class PinVaultProPopup {
             console.error('Error injecting content script:', error);
             return false;
         }
+    }
+
+    getPrimaryContentScriptFile() {
+        const contentScripts = chrome.runtime.getManifest().content_scripts;
+        const firstEntry = contentScripts && contentScripts[0];
+        const firstScript = firstEntry?.js?.[0];
+        return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
     async updateImageCounts() {

@@ -24,7 +24,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle">Pinterest 下载器</span>
                 </div>
-                <span class="badge-version">v1.2.7</span>
+                <span class="badge-version">v1.2.8</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="切换主题" style="display:none;">
@@ -203,18 +203,6 @@
         <div id="proFeatures" style="display:none;"></div>
     </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const settingsBtn = document.getElementById('settingsBtn');
-            const panel = document.getElementById('advancedFeaturesPanel');
-            if (settingsBtn && panel) {
-                settingsBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    panel.classList.toggle('panel-hidden');
-                });
-            }
-        });
-    </script>
     <script type="module" src="/src/popup.ts"></script>
 </body>
 

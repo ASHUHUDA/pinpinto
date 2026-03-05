@@ -160,6 +160,12 @@ class PinVaultProBackground {
     handleTabUpdate(tabId, changeInfo, tab) {
         // Inject content script if navigating to Pinterest
         if (changeInfo.status === 'complete' && tab.url && this.isPinterestUrl(tab.url)) {
+            const contentScriptFile = this.getPrimaryContentScriptFile();
+            if (!contentScriptFile) {
+                console.warn('Background: No content script path found in manifest.');
+                return;
+            }
+
             // Check if content script is already injected
             chrome.scripting.executeScript({
                 target: { tabId: tabId },
@@ -169,7 +175,7 @@ class PinVaultProBackground {
                     // Content script not loaded, inject it
                     chrome.scripting.executeScript({
                         target: { tabId: tabId },
-                        files: ['content.js']
+                        files: [contentScriptFile]
                     }).catch(error => {
                         console.log('Content script injection skipped:', error.message);
                     });
@@ -178,12 +184,19 @@ class PinVaultProBackground {
                 // Tab might not be ready, try injecting anyway
                 chrome.scripting.executeScript({
                     target: { tabId: tabId },
-                    files: ['content.js']
+                    files: [contentScriptFile]
                 }).catch(err => {
                     console.log('Content script injection failed:', err.message);
                 });
             });
         }
+    }
+
+    getPrimaryContentScriptFile() {
+        const contentScripts = chrome.runtime.getManifest().content_scripts;
+        const firstEntry = contentScripts && contentScripts[0];
+        const firstScript = firstEntry?.js?.[0];
+        return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
     async handleContextMenuClick(info, tab) {
@@ -386,9 +399,9 @@ class PinVaultProBackground {
         this.sendProgressUpdate(60, '图片获取完成，正在压缩打包...');
 
         try {
-            const zipBlob = await zip.generateAsync(
+            const zipBase64 = await zip.generateAsync(
                 {
-                    type: 'blob',
+                    type: 'base64',
                     compression: 'STORE'
                 },
                 (metadata) => {
@@ -398,9 +411,9 @@ class PinVaultProBackground {
 
             this.sendProgressUpdate(95, '打包完成，正在触发下载...');
 
-            const zipBlobUrl = URL.createObjectURL(zipBlob);
+            const zipDataUrl = `data:application/zip;base64,${zipBase64}`;
             const downloadId = await chrome.downloads.download({
-                url: zipBlobUrl,
+                url: zipDataUrl,
                 filename: zipName,
                 conflictAction: 'uniquify'
             });
@@ -414,10 +427,6 @@ class PinVaultProBackground {
             });
 
             console.log(`ZIP download started with ID: ${downloadId}`);
-
-            setTimeout(() => {
-                URL.revokeObjectURL(zipBlobUrl);
-            }, 60000);
 
             this.sendProgressUpdate(
                 100,

@@ -209,9 +209,15 @@ class PinVaultProSidebar {
         }
 
         try {
+            const contentScriptFile = this.getPrimaryContentScriptFile();
+            if (!contentScriptFile) {
+                console.error('Content script path not found in manifest.');
+                return false;
+            }
+
             await chrome.scripting.executeScript({
                 target: { tabId },
-                files: ['content.js']
+                files: [contentScriptFile]
             });
             await new Promise((resolve) => setTimeout(resolve, 500));
             return true;
@@ -219,6 +225,13 @@ class PinVaultProSidebar {
             console.error('Failed to inject content script:', error);
             return false;
         }
+    }
+
+    getPrimaryContentScriptFile() {
+        const contentScripts = chrome.runtime.getManifest().content_scripts;
+        const firstEntry = contentScripts && contentScripts[0];
+        const firstScript = firstEntry?.js?.[0];
+        return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
     updateStatsDisplay(total: number, selected: number) {
