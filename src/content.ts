@@ -74,15 +74,22 @@ if (window.pinVaultContentLoaded) {
                 user-select: none;
             }
 
+            .pinvault-overlay-controls {
+                position: absolute;
+                inset: 0;
+                z-index: 10000;
+                pointer-events: none;
+            }
+
             .pinvault-overlay-group {
                 position: absolute;
                 top: 8px;
                 right: 8px;
-                z-index: 9999;
                 display: flex;
                 flex-direction: column;
                 gap: 6px;
                 align-items: center;
+                pointer-events: auto;
             }
 
             .pinvault-overlay:hover {
@@ -114,33 +121,58 @@ if (window.pinVaultContentLoaded) {
             }
 
             .pinvault-single-download-btn {
-                width: 28px;
-                height: 28px;
-                border: 2px solid transparent;
-                border-radius: 50%;
-                background: rgba(0, 0, 0, 0.82);
-                color: #ffffff;
+                position: absolute;
+                left: 8px;
+                bottom: 8px;
+                min-width: 96px;
+                height: 32px;
+                padding: 0 10px;
+                border: 1px solid #166534;
+                border-radius: 10px;
+                background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%);
+                color: #14532d;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                gap: 6px;
                 cursor: pointer;
-                transition: all 0.2s ease;
-                padding: 0;
+                transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+                box-shadow: 0 2px 10px rgba(20, 83, 45, 0.24);
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.01em;
+                pointer-events: auto;
             }
 
             .pinvault-single-download-btn:hover {
-                background: rgba(0, 0, 0, 0.92);
-                transform: scale(1.08);
+                background: linear-gradient(180deg, #d1fae5 0%, #a7f3d0 100%);
+                box-shadow: 0 3px 14px rgba(20, 83, 45, 0.32);
+                transform: translateY(-1px);
+            }
+
+            .pinvault-single-download-btn:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 8px rgba(20, 83, 45, 0.25);
             }
 
             .pinvault-single-download-btn.success {
                 background: rgba(16, 185, 129, 0.95);
-                border-color: rgba(255, 255, 255, 0.85);
+                border-color: #064e3b;
+                color: #ecfdf5;
             }
 
             .pinvault-single-download-btn.error {
                 background: rgba(220, 53, 69, 0.95);
                 border-color: rgba(255, 255, 255, 0.85);
+                color: #fff;
+            }
+
+            .pinvault-single-download-btn svg {
+                flex-shrink: 0;
+            }
+
+            .pinvault-single-download-btn-label {
+                line-height: 1;
             }
 
             .pinvault-image-container {
@@ -408,7 +440,10 @@ if (window.pinVaultContentLoaded) {
 
         createOverlayControls(imageId) {
             const controls = document.createElement('div');
-            controls.className = 'pinvault-overlay-group';
+            controls.className = 'pinvault-overlay-controls';
+
+            const topRightGroup = document.createElement('div');
+            topRightGroup.className = 'pinvault-overlay-group';
 
             const overlay = document.createElement('div');
             overlay.className = 'pinvault-overlay';
@@ -437,6 +472,7 @@ if (window.pinVaultContentLoaded) {
                     <path d="M8 10.5L12 14.5L16 10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     <path d="M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 </svg>
+                <span class="pinvault-single-download-btn-label">Download</span>
             `;
 
             singleDownloadBtn.addEventListener('click', async (e) => {
@@ -445,7 +481,8 @@ if (window.pinVaultContentLoaded) {
                 await this.downloadSingleImage(imageId, singleDownloadBtn);
             });
 
-            controls.appendChild(overlay);
+            topRightGroup.appendChild(overlay);
+            controls.appendChild(topRightGroup);
             controls.appendChild(singleDownloadBtn);
 
             return { controls, selectOverlay: overlay };
