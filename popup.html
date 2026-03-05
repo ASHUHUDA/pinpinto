@@ -23,7 +23,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-          <span class="badge-version">v1.4.7</span>
+          <span class="badge-version">v1.4.8</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -40,7 +40,15 @@
                     </button>
                     <div class="settings-menu" id="settingsMenu" role="menu" hidden>
                         <button class="settings-item" id="languageToggleBtn" type="button" role="menuitem">
-                            <span data-i18n="menu.language">Language</span>
+                            <span class="settings-item-left">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"></circle>
+                                    <path d="M3 12h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                                    <path d="M12 3a15 15 0 0 1 0 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                                    <path d="M12 3a15 15 0 0 0 0 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+                                </svg>
+                                <span data-i18n="menu.language">Language</span>
+                            </span>
                             <span class="settings-value" id="currentLanguageLabel">English</span>
                         </button>
                         <button class="settings-item" id="githubMenuBtn" type="button" role="menuitem">

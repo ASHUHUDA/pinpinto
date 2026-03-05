@@ -92,7 +92,9 @@ class PinVaultProSidebar {
 
         const languageLabel = document.getElementById('currentLanguageLabel');
         if (languageLabel) {
-            languageLabel.textContent = this.language === 'en' ? 'English' : '涓枃';
+            languageLabel.textContent =
+                this.staticTranslations[this.language]['menu.currentLanguage'] ||
+                (this.language === 'en' ? 'English' : '中文');
         }
     }
 
