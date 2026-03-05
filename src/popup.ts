@@ -5,7 +5,6 @@ import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_S
 type PopupSettings = {
     language: SupportedLanguage;
     highQuality: boolean;
-    privacyMode: boolean;
     autoScroll: boolean;
     autoBatchDownload: boolean;
     theme: string;
@@ -56,7 +55,6 @@ class PinVaultProPopup {
         const settings = (await chrome.storage.sync.get({
             language: 'en',
             highQuality: true,
-            privacyMode: false,
             autoScroll: false,
             autoBatchDownload: false,
             theme: 'default',
@@ -71,7 +69,6 @@ class PinVaultProPopup {
 
         this.language = normalizeLanguage(settings.language);
         (document.getElementById('highQuality') as HTMLInputElement).checked = settings.highQuality;
-        (document.getElementById('privacyMode') as HTMLInputElement).checked = settings.privacyMode;
         (document.getElementById('autoScrollToggle') as HTMLInputElement).checked = settings.autoScroll;
 
         const autoBatchToggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
@@ -169,10 +166,6 @@ class PinVaultProPopup {
 
         document.getElementById('highQuality')?.addEventListener('change', (e) => {
             this.saveSetting('highQuality', (e.target as HTMLInputElement).checked);
-        });
-
-        document.getElementById('privacyMode')?.addEventListener('change', (e) => {
-            this.saveSetting('privacyMode', (e.target as HTMLInputElement).checked);
         });
 
         document.getElementById('openPinterestBtn')?.addEventListener('click', () => this.openPinterest());
@@ -604,7 +597,6 @@ class PinVaultProPopup {
     async getSettings() {
         return chrome.storage.sync.get({
             highQuality: true,
-            privacyMode: false,
             autoScroll: false,
             autoBatchDownload: false,
             filenameFormat: 'title_date',

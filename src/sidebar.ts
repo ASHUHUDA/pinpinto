@@ -61,10 +61,6 @@ class PinVaultProSidebar {
             this.saveSetting('highQuality', (e.target as HTMLInputElement).checked);
         });
 
-        document.getElementById('privacyMode')?.addEventListener('change', (e) => {
-            this.saveSetting('privacyMode', (e.target as HTMLInputElement).checked);
-        });
-
         document.getElementById('autoScrollToggle')?.addEventListener('change', (e) => {
             this.toggleAutoScroll((e.target as HTMLInputElement).checked);
         });
@@ -540,7 +536,6 @@ class PinVaultProSidebar {
             const settings = await chrome.storage.sync.get({
                 language: 'en',
                 highQuality: true,
-                privacyMode: false,
                 autoScroll: false,
                 autoBatchDownload: false
             });
@@ -548,7 +543,6 @@ class PinVaultProSidebar {
             this.language = normalizeLanguage(settings.language);
 
             (document.getElementById('highQuality') as HTMLInputElement).checked = settings.highQuality !== false;
-            (document.getElementById('privacyMode') as HTMLInputElement).checked = settings.privacyMode === true;
             (document.getElementById('autoScrollToggle') as HTMLInputElement).checked = settings.autoScroll === true;
 
             const autoBatchToggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
@@ -570,7 +564,6 @@ class PinVaultProSidebar {
         try {
             return await chrome.storage.sync.get({
                 highQuality: true,
-                privacyMode: false,
                 autoScroll: false,
                 autoBatchDownload: false,
                 filenameFormat: 'title_date',
@@ -581,7 +574,6 @@ class PinVaultProSidebar {
             console.error('Error getting settings:', error);
             return {
                 highQuality: true,
-                privacyMode: false,
                 autoScroll: false,
                 autoBatchDownload: false,
                 filenameFormat: 'title_date',

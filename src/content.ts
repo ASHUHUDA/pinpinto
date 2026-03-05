@@ -307,8 +307,7 @@ if (window.pinVaultContentLoaded) {
 
             try {
                 const settings = await chrome.storage.sync.get({
-                    highQuality: true,
-                    privacyMode: false
+                    highQuality: true
                 });
 
                 const response = await chrome.runtime.sendMessage({

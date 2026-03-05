@@ -88,7 +88,6 @@ class PinVaultProBackground {
                 language: 'en',
                 filenameFormat: 'title_date',
                 highQuality: true,
-                privacyMode: false,
                 autoScroll: false,
                 maxConcurrentDownloads: 3,
                 downloadPath: ''
@@ -209,8 +208,7 @@ class PinVaultProBackground {
             // Get user settings
             const settings = await chrome.storage.sync.get({
                 filenameFormat: 'title_date',
-                highQuality: true,
-                privacyMode: false
+                highQuality: true
             });
 
             // Prepare image data
@@ -252,9 +250,6 @@ class PinVaultProBackground {
             };
 
             console.log('Download options:', downloadOptions);
-
-            // Note: Chrome downloads API doesn't support 'incognito' property
-            // Privacy mode is handled at the browser level, not in download options
 
             const downloadId = await chrome.downloads.download(downloadOptions);
             console.log('Download started with ID:', downloadId);
