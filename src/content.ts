@@ -61,10 +61,6 @@ if (window.pinVaultContentLoaded) {
             style.id = 'pinvault-styles';
             style.textContent = `
             .pinvault-overlay {
-                position: absolute;
-                top: 8px;
-                right: 8px;
-                z-index: 9999;
                 background: rgba(0, 0, 0, 0.8);
                 border-radius: 50%;
                 width: 28px;
@@ -76,6 +72,17 @@ if (window.pinVaultContentLoaded) {
                 transition: all 0.2s ease;
                 border: 2px solid transparent;
                 user-select: none;
+            }
+
+            .pinvault-overlay-group {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                align-items: center;
             }
 
             .pinvault-overlay:hover {
@@ -104,6 +111,36 @@ if (window.pinVaultContentLoaded) {
                 font-size: 14px;
                 font-weight: bold;
                 pointer-events: none;
+            }
+
+            .pinvault-single-download-btn {
+                width: 28px;
+                height: 28px;
+                border: 2px solid transparent;
+                border-radius: 50%;
+                background: rgba(0, 0, 0, 0.82);
+                color: #ffffff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                padding: 0;
+            }
+
+            .pinvault-single-download-btn:hover {
+                background: rgba(0, 0, 0, 0.92);
+                transform: scale(1.08);
+            }
+
+            .pinvault-single-download-btn.success {
+                background: rgba(16, 185, 129, 0.95);
+                border-color: rgba(255, 255, 255, 0.85);
+            }
+
+            .pinvault-single-download-btn.error {
+                background: rgba(220, 53, 69, 0.95);
+                border-color: rgba(255, 255, 255, 0.85);
             }
 
             .pinvault-image-container {
@@ -294,14 +331,14 @@ if (window.pinVaultContentLoaded) {
             container.classList.add('pinvault-image-container');
 
             // Create overlay
-            const overlay = this.createOverlay(imageId, img);
-            container.appendChild(overlay);
+            const { controls, selectOverlay } = this.createOverlayControls(imageId);
+            container.appendChild(controls);
 
             // Store image data
             this.imageElements.set(imageId, {
                 element: img,
                 container: container,
-                overlay: overlay,
+                overlay: selectOverlay,
                 url: this.getHighQualityUrl(img),
                 title: this.extractImageTitle(container),
                 board: this.extractBoardName(),
@@ -369,7 +406,10 @@ if (window.pinVaultContentLoaded) {
             return img.parentElement;
         }
 
-        createOverlay(imageId, img) {
+        createOverlayControls(imageId) {
+            const controls = document.createElement('div');
+            controls.className = 'pinvault-overlay-group';
+
             const overlay = document.createElement('div');
             overlay.className = 'pinvault-overlay';
             overlay.dataset.imageId = imageId;
@@ -386,7 +426,73 @@ if (window.pinVaultContentLoaded) {
                 this.toggleImageSelection(imageId);
             });
 
-            return overlay;
+            const singleDownloadBtn = document.createElement('button');
+            singleDownloadBtn.className = 'pinvault-single-download-btn';
+            singleDownloadBtn.type = 'button';
+            singleDownloadBtn.title = 'Download this image';
+            singleDownloadBtn.setAttribute('aria-label', 'Download this image');
+            singleDownloadBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M8 10.5L12 14.5L16 10.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            `;
+
+            singleDownloadBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await this.downloadSingleImage(imageId, singleDownloadBtn);
+            });
+
+            controls.appendChild(overlay);
+            controls.appendChild(singleDownloadBtn);
+
+            return { controls, selectOverlay: overlay };
+        }
+
+        async downloadSingleImage(imageId, singleDownloadBtn) {
+            const imageData = this.imageElements.get(imageId);
+            if (!imageData) {
+                return;
+            }
+
+            singleDownloadBtn.classList.remove('success', 'error');
+            singleDownloadBtn.disabled = true;
+
+            try {
+                const settings = await chrome.storage.sync.get({
+                    highQuality: true,
+                    privacyMode: false
+                });
+
+                const response = await chrome.runtime.sendMessage({
+                    action: 'downloadImage',
+                    imageData: {
+                        id: imageId,
+                        url: imageData.url,
+                        title: imageData.title,
+                        board: imageData.board,
+                        domain: imageData.domain,
+                        originalFilename: imageData.originalFilename
+                    },
+                    settings
+                });
+
+                if (response?.success) {
+                    singleDownloadBtn.classList.add('success');
+                } else {
+                    singleDownloadBtn.classList.add('error');
+                }
+            } catch (error) {
+                console.error('PinPinto single image download failed:', error);
+                singleDownloadBtn.classList.add('error');
+            } finally {
+                singleDownloadBtn.disabled = false;
+                window.setTimeout(() => {
+                    singleDownloadBtn.classList.remove('success', 'error');
+                }, 1600);
+            }
         }
 
         getHighQualityUrl(img) {
