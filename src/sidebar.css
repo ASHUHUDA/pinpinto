@@ -575,6 +575,19 @@ body {
     font-size: 11px;
 }
 
+.btn,
+.settings-item {
+    will-change: transform, filter;
+}
+
+.btn:active,
+.settings-item:active,
+.btn.is-pressing,
+.settings-item.is-pressing {
+    transform: scale(0.98);
+    filter: brightness(0.96);
+}
+
 /* Entrance Animations */
 @keyframes slideInUp {
     from {

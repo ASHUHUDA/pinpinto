@@ -219,6 +219,22 @@ body {
     font-size: 11px;
 }
 
+.btn,
+.icon-btn,
+.settings-item {
+    will-change: transform, filter;
+}
+
+.btn:active,
+.icon-btn:active,
+.settings-item:active,
+.btn.is-pressing,
+.icon-btn.is-pressing,
+.settings-item.is-pressing {
+    transform: scale(0.98);
+    filter: brightness(0.96);
+}
+
 /* STATUS BAR */
 .status-bar {
     margin-bottom: 20px;

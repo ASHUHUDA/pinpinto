@@ -100,6 +100,7 @@ class PinVaultProPopup {
     async init() {
         await this.loadSettings();
         this.setupEventListeners();
+        this.bindButtonPressFeedback();
         this.updateLanguage();
         await this.checkPinterestConnection();
         this.setupPeriodicUpdates();
@@ -285,6 +286,26 @@ class PinVaultProPopup {
         this.updateLanguage();
         await this.checkPinterestConnection();
         this.closeSettingsMenu();
+    }
+
+    bindButtonPressFeedback() {
+        document.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
+            button.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    button.classList.add('is-pressing');
+                }
+            });
+
+            button.addEventListener('keyup', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    button.classList.remove('is-pressing');
+                }
+            });
+
+            button.addEventListener('blur', () => {
+                button.classList.remove('is-pressing');
+            });
+        });
     }
 
     setupPeriodicUpdates() {

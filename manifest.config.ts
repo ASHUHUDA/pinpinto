@@ -1,10 +1,10 @@
-﻿import { defineManifest } from '@crxjs/vite-plugin'
+import { defineManifest } from '@crxjs/vite-plugin'
 import { PINIMG_MATCH_PATTERNS, PINTEREST_MATCH_PATTERNS } from './src/shared/pinterest'
 
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest Downloader',
-  version: '1.3.2',
+  version: '1.3.3',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions: ['downloads', 'storage', 'contextMenus', 'activeTab', 'scripting', 'sidePanel', 'windows'],
   host_permissions: [...PINTEREST_MATCH_PATTERNS, ...PINIMG_MATCH_PATTERNS],
