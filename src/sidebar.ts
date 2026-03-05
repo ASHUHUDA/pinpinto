@@ -1,4 +1,4 @@
-﻿import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
 
@@ -52,7 +52,7 @@ class PinVaultProSidebar {
             'setting.highQuality': 'Prefer high quality',
             'setting.privacyMode': 'Privacy mode',
             'setting.autoScroll': 'Auto scroll',
-            'setting.autoBatch': 'Auto batch (200, max 3 rounds)',
+            'setting.autoBatch': 'Auto download (200/{0}/3)',
             'action.cancelDownload': 'Cancel download',
             'state.notPinterestTitle': 'Open Pinterest first',
             'state.notPinterestDesc': 'Switch to a Pinterest page and try again.',
@@ -69,7 +69,7 @@ class PinVaultProSidebar {
             'setting.highQuality': '优先高清图',
             'setting.privacyMode': '隐私模式',
             'setting.autoScroll': '自动滚动',
-            'setting.autoBatch': '200图自动下(最多3次)',
+            'setting.autoBatch': '自动下载(200/{0}/3)',
             'action.cancelDownload': '取消下载',
             'state.notPinterestTitle': '请先打开 Pinterest',
             'state.notPinterestDesc': '切换到 Pinterest 页面后再试。',

@@ -1,4 +1,4 @@
-﻿import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 
 type SupportedLanguage = 'en' | 'zh';
 
@@ -58,7 +58,7 @@ class PinVaultProPopup {
                 'action.clear': 'Clear',
                 'action.sidebar': 'Sidebar',
                 'setting.autoScroll': 'Auto scroll',
-                'setting.autoBatch': 'Auto batch (200, max 3 rounds)',
+                'setting.autoBatch': 'Auto download (200/{0}/3)',
                 'action.stop': 'Stop',
                 'panel.downloadSettings': 'Download settings',
                 'setting.highQuality': 'Prefer high quality',
@@ -79,7 +79,7 @@ class PinVaultProPopup {
                 'action.clear': '清空',
                 'action.sidebar': '侧边栏',
                 'setting.autoScroll': '自动滚动',
-                'setting.autoBatch': '200图自动下(最多3次)',
+                'setting.autoBatch': '自动下载(200/{0}/3)',
                 'action.stop': '停止',
                 'panel.downloadSettings': '下载设置',
                 'setting.highQuality': '优先下载高清图',
