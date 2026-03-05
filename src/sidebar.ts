@@ -1,4 +1,6 @@
-import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+﻿import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
+import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
 
@@ -7,75 +9,9 @@ class PinVaultProSidebar {
     autoScrollStatsTimer: number | null = null;
     batchCount: number = 0;
     isBatchingNow: boolean = false;
-    language: 'en' | 'zh' = 'en';
-    translations: Record<'en' | 'zh', Record<string, string>> = {
-        en: {
-            'status.connected': 'Connected to Pinterest',
-            'status.notConnected': 'Not a Pinterest page',
-            'status.error': 'Connection check failed',
-            'alert.openPinterestFirst': 'Please open Pinterest first.',
-            'alert.noImages': 'No downloadable images were detected.',
-            'alert.selectFirst': 'Please select images first.',
-            'alert.downloadStartFailed': 'Failed to start download:',
-            'alert.downloadFailed': 'Download failed:',
-            'progress.preparing': 'Preparing download...',
-            'menu.language': 'Language',
-            'menu.github': 'GitHub',
-            'menu.currentLanguage': 'English',
-            'state.batchComplete': 'Batch download complete (3 rounds).'
-        },
-        zh: {
-            'status.connected': '已连接 Pinterest',
-            'status.notConnected': '非 Pinterest 页面',
-            'status.error': '连接检查失败，请重试',
-            'alert.openPinterestFirst': '请先打开 Pinterest。',
-            'alert.noImages': '未检测到可下载图片。',
-            'alert.selectFirst': '请先选图。',
-            'alert.downloadStartFailed': '启动下载失败：',
-            'alert.downloadFailed': '下载失败：',
-            'progress.preparing': '准备下载...',
-            'menu.language': '语言',
-            'menu.github': 'GitHub',
-            'menu.currentLanguage': '中文',
-            'state.batchComplete': '分批下载完成（3轮）。'
-        }
-    };
-    staticTranslations: Record<'en' | 'zh', Record<string, string>> = {
-        en: {
-            'stats.total': 'Images',
-            'stats.selected': 'Selected',
-            'panel.actions': 'Actions',
-            'action.selectAll': 'Select all',
-            'action.clear': 'Clear',
-            'action.downloadSelected': 'Download selected',
-            'panel.preferences': 'Preferences',
-            'setting.highQuality': 'Prefer high quality',
-            'setting.privacyMode': 'Privacy mode',
-            'setting.autoScroll': 'Auto scroll',
-            'setting.autoBatch': 'Auto download (200/{0}/3)',
-            'action.cancelDownload': 'Cancel download',
-            'state.notPinterestTitle': 'Open Pinterest first',
-            'state.notPinterestDesc': 'Switch to a Pinterest page and try again.',
-            'action.openPinterest': 'Open Pinterest'
-        },
-        zh: {
-            'stats.total': '页面图片',
-            'stats.selected': '已选择',
-            'panel.actions': '快捷操作',
-            'action.selectAll': '全选',
-            'action.clear': '清空',
-            'action.downloadSelected': '下载已选',
-            'panel.preferences': '偏好设置',
-            'setting.highQuality': '优先高清图',
-            'setting.privacyMode': '隐私模式',
-            'setting.autoScroll': '自动滚动',
-            'setting.autoBatch': '自动下载(200/{0}/3)',
-            'action.cancelDownload': '取消下载',
-            'state.notPinterestTitle': '请先打开 Pinterest',
-            'state.notPinterestDesc': '切换到 Pinterest 页面后再试。',
-            'action.openPinterest': '打开 Pinterest'
-        }
-    };
+    language: SupportedLanguage = DEFAULT_LANGUAGE;
+    translations: typeof SIDEBAR_STATUS_TRANSLATIONS = SIDEBAR_STATUS_TRANSLATIONS;
+    staticTranslations: typeof SIDEBAR_STATIC_TRANSLATIONS = SIDEBAR_STATIC_TRANSLATIONS;
 
     constructor() {
         this.init().catch((error) => console.error(error));
@@ -119,23 +55,7 @@ class PinVaultProSidebar {
             chrome.tabs.create({ url: 'https://github.com/ASHUHUDA/pinpinto' });
             this.closeSettingsMenu();
         });
-
-        document.addEventListener('click', (event) => {
-            const target = event.target as Node;
-            const menu = document.getElementById('settingsMenu');
-            const trigger = document.getElementById('settingsBtn');
-            if (!menu || !trigger) return;
-
-            if (!menu.contains(target) && !trigger.contains(target)) {
-                this.closeSettingsMenu();
-            }
-        });
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
-                this.closeSettingsMenu();
-            }
-        });
+        bindSettingsMenuDismiss(() => this.closeSettingsMenu());
 
         document.getElementById('highQuality')?.addEventListener('change', (e) => {
             this.saveSetting('highQuality', (e.target as HTMLInputElement).checked);
@@ -172,7 +92,7 @@ class PinVaultProSidebar {
 
         const languageLabel = document.getElementById('currentLanguageLabel');
         if (languageLabel) {
-            languageLabel.textContent = this.language === 'en' ? 'English' : '中文';
+            languageLabel.textContent = this.language === 'en' ? 'English' : '涓枃';
         }
     }
 
@@ -181,26 +101,11 @@ class PinVaultProSidebar {
     }
 
     toggleSettingsMenu() {
-        const menu = document.getElementById('settingsMenu');
-        const trigger = document.getElementById('settingsBtn');
-        if (!menu || !trigger) return;
-
-        const isHidden = menu.hasAttribute('hidden');
-        if (isHidden) {
-            menu.removeAttribute('hidden');
-        } else {
-            menu.setAttribute('hidden', '');
-        }
-        trigger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+        toggleSharedSettingsMenu();
     }
 
     closeSettingsMenu() {
-        const menu = document.getElementById('settingsMenu');
-        const trigger = document.getElementById('settingsBtn');
-        if (!menu || !trigger) return;
-
-        menu.setAttribute('hidden', '');
-        trigger.setAttribute('aria-expanded', 'false');
+        closeSharedSettingsMenu();
     }
 
     bindButtonPressFeedback() {
@@ -532,7 +437,7 @@ class PinVaultProSidebar {
                                 imageData.push({
                                     id: `img_${Date.now()}_${index}`,
                                     url: image.src,
-                                    title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
+                                    title: image.alt || image.title || `Pinterest 鍥剧墖 ${index + 1}`,
                                     board: document.title || 'Pinterest',
                                     domain: window.location.hostname,
                                     originalFilename: image.src.split('/').pop()
@@ -627,7 +532,7 @@ class PinVaultProSidebar {
                 autoBatchDownload: false
             });
 
-            this.language = settings.language === 'zh' ? 'zh' : 'en';
+            this.language = normalizeLanguage(settings.language);
 
             (document.getElementById('highQuality') as HTMLInputElement).checked = settings.highQuality !== false;
             (document.getElementById('privacyMode') as HTMLInputElement).checked = settings.privacyMode === true;
@@ -730,5 +635,7 @@ if (document.readyState === 'loading') {
 } else {
     sidebar = new PinVaultProSidebar();
 }
+
+
 
 

@@ -188,7 +188,7 @@ body {
     z-index: 20;
 }
 
-.settings-menu.panel-hidden {
+.settings-menu[hidden] {
     display: none;
 }
 
