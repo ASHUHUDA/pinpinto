@@ -107,6 +107,8 @@ export const SIDEBAR_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<strin
         'setting.autoScroll': 'Auto scroll',
         'setting.autoBatch': 'Auto download (200/{0}/3)',
         'action.cancelDownload': 'Cancel download',
+        'menu.language': 'Language',
+        'menu.github': 'GitHub',
         'state.notPinterestTitle': 'Open Pinterest first',
         'state.notPinterestDesc': 'Switch to a Pinterest page and try again.',
         'action.openPinterest': 'Open Pinterest'
@@ -124,6 +126,8 @@ export const SIDEBAR_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<strin
         'setting.autoScroll': '自动滚动',
         'setting.autoBatch': '自动下载(200/{0}/3)',
         'action.cancelDownload': '取消下载',
+        'menu.language': '语言',
+        'menu.github': 'GitHub',
         'state.notPinterestTitle': '请先打开 Pinterest',
         'state.notPinterestDesc': '切换到 Pinterest 页面后再试。',
         'action.openPinterest': '打开 Pinterest'
@@ -133,4 +137,3 @@ export const SIDEBAR_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<strin
 export function normalizeLanguage(value: unknown): SupportedLanguage {
     return value === 'zh' ? 'zh' : 'en';
 }
-

@@ -1,6 +1,6 @@
 {
   "name": "pinpinto",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "",
   "main": "background.js",
   "scripts": {
@@ -28,6 +28,7 @@
     "jszip": "^3.10.1"
   }
 }
+
 
 
 
