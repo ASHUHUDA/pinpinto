@@ -26,6 +26,9 @@ export const PINTEREST_MATCH_PATTERNS = PINTEREST_DOMAINS.map(
   (domain) => `*://*.${domain}/*`
 );
 
+// Background service worker fetches image binaries from pinimg domains for ZIP packaging.
+export const PINIMG_MATCH_PATTERNS = ['*://*.pinimg.com/*', '*://pinimg.com/*'] as const;
+
 export function isPinterestUrl(url: string): boolean {
   return PINTEREST_DOMAINS.some((domain) => url.includes(domain));
 }
