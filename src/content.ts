@@ -84,8 +84,9 @@ if (window.pinVaultContentLoaded) {
             }
 
             .pinvault-overlay.selected {
-                background: rgba(0, 123, 255, 0.9);
-                border-color: rgba(255, 255, 255, 0.8);
+                background: rgba(187, 247, 208, 0.95);
+                border-color: #166534;
+                color: #14532d;
             }
 
             .pinvault-overlay.success {
@@ -107,6 +108,11 @@ if (window.pinVaultContentLoaded) {
 
             .pinvault-image-container {
                 position: relative;
+            }
+
+            .pinvault-image-container.pinvault-selected {
+                background: rgba(187, 247, 208, 0.35);
+                box-shadow: inset 0 0 0 3px #166534;
             }
 
             .pinvault-loading {
@@ -456,12 +462,14 @@ if (window.pinVaultContentLoaded) {
                 // Deselect
                 this.selectedImages.delete(imageId);
                 overlay.classList.remove('selected');
+                imageData.container.classList.remove('pinvault-selected');
                 imageData.element.setAttribute('data-pinvault-selected', 'false');
                 checkbox.textContent = '[ ]';
             } else {
                 // Select
                 this.selectedImages.add(imageId);
                 overlay.classList.add('selected');
+                imageData.container.classList.add('pinvault-selected');
                 imageData.element.setAttribute('data-pinvault-selected', 'true');
                 checkbox.textContent = '[x]';
             }
@@ -472,6 +480,7 @@ if (window.pinVaultContentLoaded) {
                 if (!this.selectedImages.has(imageId)) {
                     this.selectedImages.add(imageId);
                     imageData.overlay.classList.add('selected');
+                    imageData.container.classList.add('pinvault-selected');
                     imageData.element.setAttribute('data-pinvault-selected', 'true');
                     imageData.overlay.querySelector('.pinvault-checkbox').textContent = '[x]';
                 }
@@ -483,6 +492,7 @@ if (window.pinVaultContentLoaded) {
                 const imageData = this.imageElements.get(imageId);
                 if (imageData) {
                     imageData.overlay.classList.remove('selected', 'success', 'error');
+                    imageData.container.classList.remove('pinvault-selected');
                     imageData.element.setAttribute('data-pinvault-selected', 'false');
                     imageData.overlay.querySelector('.pinvault-checkbox').textContent = '[ ]';
                 }
