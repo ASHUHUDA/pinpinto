@@ -12,6 +12,14 @@ export function createOverlayControls(
     imageId: string,
     callbacks: OverlayControlCallbacks
 ): OverlayControlElements {
+    const consumeEvent = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if ('stopImmediatePropagation' in event && typeof event.stopImmediatePropagation === 'function') {
+            event.stopImmediatePropagation();
+        }
+    };
+
     const controls = document.createElement('div');
     controls.className = 'pinvault-overlay-controls';
 
@@ -28,8 +36,7 @@ export function createOverlayControls(
     overlay.appendChild(checkbox);
 
     overlay.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        consumeEvent(e);
         callbacks.onToggleSelection();
     });
 
@@ -47,9 +54,14 @@ export function createOverlayControls(
                 <span class="pinvault-single-download-btn-label">Download</span>
             `;
 
+    // Pinterest card on homepage binds click handlers aggressively.
+    // Consume pointer chain on the button so outer card doesn't steal the interaction.
+    ['pointerdown', 'mousedown', 'touchstart', 'mouseup', 'touchend'].forEach((type) => {
+        singleDownloadBtn.addEventListener(type, consumeEvent, { capture: true });
+    });
+
     singleDownloadBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+        consumeEvent(e);
         await callbacks.onDownloadSingle(singleDownloadBtn);
     });
 
@@ -59,4 +71,3 @@ export function createOverlayControls(
 
     return { controls, selectOverlay: overlay };
 }
-

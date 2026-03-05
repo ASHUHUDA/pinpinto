@@ -18,7 +18,7 @@ export const PINPINTO_CONTENT_STYLE_TEXT = `
             .pinvault-overlay-controls {
                 position: absolute;
                 inset: 0;
-                z-index: 10000;
+                z-index: 2147483645;
                 pointer-events: none;
             }
 
@@ -83,6 +83,8 @@ export const PINPINTO_CONTENT_STYLE_TEXT = `
                 font-weight: 600;
                 letter-spacing: 0.01em;
                 pointer-events: auto;
+                z-index: 2147483646;
+                touch-action: manipulation;
             }
 
             .pinvault-single-download-btn:hover {
@@ -166,4 +168,3 @@ export const PINPINTO_CONTENT_STYLE_TEXT = `
                 100% { opacity: 0.8; }
             }
 `;
-

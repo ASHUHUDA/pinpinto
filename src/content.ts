@@ -193,21 +193,23 @@ if (window.pinVaultContentLoaded) {
             // Find the container element
             const container = this.findImageContainer(img);
             if (!container) return;
+            const overlayHost = this.findOverlayHost(container);
+            if (!overlayHost) return;
 
             // Make container relative positioned
-            if (getComputedStyle(container).position === 'static') {
-                container.style.position = 'relative';
+            if (getComputedStyle(overlayHost).position === 'static') {
+                overlayHost.style.position = 'relative';
             }
-            container.classList.add('pinvault-image-container');
+            overlayHost.classList.add('pinvault-image-container');
 
             // Create overlay
             const { controls, selectOverlay } = this.createOverlayControls(imageId);
-            container.appendChild(controls);
+            overlayHost.appendChild(controls);
 
             // Store image data
             this.imageElements.set(imageId, {
                 element: img,
-                container: container,
+                container: overlayHost,
                 overlay: selectOverlay,
                 url: this.getHighQualityUrl(img),
                 title: this.extractImageTitle(container),
@@ -274,6 +276,17 @@ if (window.pinVaultContentLoaded) {
 
             // Fallback to direct parent
             return img.parentElement;
+        }
+
+        findOverlayHost(container: HTMLElement) {
+            // 首页卡片常见结构是 <a> 包裹图片，若把按钮插在 <a> 内会触发跳转。
+            // 这里强制把覆盖层挂到链接外层，避免点击单图按钮时被页面导航事件抢占。
+            const linkAncestor = container.closest('a[href]');
+            if (linkAncestor?.parentElement) {
+                return linkAncestor.parentElement as HTMLElement;
+            }
+
+            return container;
         }
 
         createOverlayControls(imageId) {
