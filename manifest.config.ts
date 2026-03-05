@@ -36,7 +36,7 @@ const browserUiSection = isFirefoxTarget
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest Downloader',
-  version: '1.4.1',
+  version: '1.4.2',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions,
   host_permissions: [...PINTEREST_MATCH_PATTERNS, ...PINIMG_MATCH_PATTERNS],
