@@ -1,10 +1,11 @@
-﻿{
+{
   "name": "pinpinto",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "",
   "main": "background.js",
   "scripts": {
     "dev": "vite",
+    "icon:build": "node resize_icons.js",
     "typecheck": "tsc --noEmit",
     "verify": "tsc --noEmit && vite build",
     "build": "vite build"

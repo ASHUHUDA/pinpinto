@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#DDF9E9"/>
+      <stop offset="0.48" stop-color="#BDEFCC"/>
+      <stop offset="1" stop-color="#90DDB4"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="128" y1="22" x2="128" y2="118" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.56"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glyph-shadow" x="72" y="48" width="138" height="164" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2.4" stdDeviation="2.8" flood-color="#4FB889" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect x="16" y="16" width="224" height="224" rx="58" fill="url(#bg)"/>
+  <rect x="22" y="22" width="212" height="98" rx="44" fill="url(#shine)"/>
+
+  <g filter="url(#glyph-shadow)">
+    <path d="M96 68V188" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M96 68H138C169 68 188 87 188 113C188 139 169 158 138 158H96" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M132 94V132" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+    <path d="M119 118L132 131L145 118" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <circle cx="66" cy="66" r="8" fill="#FFFFFF" fill-opacity="0.28"/>
+  <circle cx="84" cy="54" r="4" fill="#FFFFFF" fill-opacity="0.2"/>
+</svg>
