@@ -38,11 +38,6 @@ corepack.cmd pnpm run verify
 corepack.cmd pnpm build
 ```
 
-## 测试与发布约定
-每次测试通过后建议执行：
-1. 更新版本号（`package.json` + `manifest.config.ts` + UI 角标）
-2. 提交 Git 变更并打清晰的提交信息
-
 ## 仓库结构
 - `src/background.ts`: 下载与任务编排
 - `src/content.ts`: 页面图片扫描与选择覆盖层

@@ -38,11 +38,6 @@ corepack.cmd pnpm run verify
 corepack.cmd pnpm build
 ```
 
-## Test & Release Convention
-After each successful test cycle:
-1. Bump version (`package.json` + `manifest.config.ts` + UI badges)
-2. Commit git changes with a clear message
-
 ## Project Structure
 - `src/background.ts`: download orchestration
 - `src/content.ts`: page scan and selection overlays
