@@ -128,8 +128,15 @@ class PinVaultProPopup {
             this.toggleAutoScroll((e.target as HTMLInputElement).checked);
         });
 
-        document.getElementById('autoBatchToggle')?.addEventListener('change', (e) => {
-            this.saveSetting('autoBatchDownload', (e.target as HTMLInputElement).checked);
+        document.getElementById('autoBatchToggle')?.addEventListener('change', async (e) => {
+            const checked = (e.target as HTMLInputElement).checked;
+            await this.saveSetting('autoBatchDownload', checked);
+
+            if (checked) {
+                this.setAutoScrollUi(true);
+                await this.saveSetting('autoScroll', true);
+                await this.toggleAutoScroll(true);
+            }
         });
 
         document.getElementById('stopScrollBtn')?.addEventListener('click', () => this.stopAutoScroll());

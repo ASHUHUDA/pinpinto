@@ -69,8 +69,19 @@ class PinVaultProSidebar {
             this.toggleAutoScroll((e.target as HTMLInputElement).checked);
         });
 
-        document.getElementById('autoBatchToggle')?.addEventListener('change', (e) => {
-            this.saveSetting('autoBatchDownload', (e.target as HTMLInputElement).checked);
+        document.getElementById('autoBatchToggle')?.addEventListener('change', async (e) => {
+            const checked = (e.target as HTMLInputElement).checked;
+            await this.saveSetting('autoBatchDownload', checked);
+
+            if (checked) {
+                const autoScrollToggle = document.getElementById('autoScrollToggle') as HTMLInputElement | null;
+                if (autoScrollToggle) {
+                    autoScrollToggle.checked = true;
+                }
+
+                await this.saveSetting('autoScroll', true);
+                await this.toggleAutoScroll(true);
+            }
         });
 
         document.getElementById('cancelDownloadBtn')?.addEventListener('click', () => {
@@ -366,9 +377,9 @@ class PinVaultProSidebar {
                     const settings = await this.getSettings();
                     if (settings.autoBatchDownload) {
                         const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
-                        const targetThreshold = (this.batchCount + 1) * 200;
+                        const targetThreshold = (this.batchCount + 1) * 100;
 
-                        if (total >= targetThreshold && this.batchCount < 3) {
+                        if (total >= targetThreshold) {
                             this.isBatchingNow = true;
 
                             try {
@@ -603,23 +614,13 @@ chrome.runtime.onMessage.addListener((message) => {
                     // ignore
                 });
 
-                if (sidebar.batchCount < 3) {
-                    sidebar.isBatchingNow = false;
+                const settings = await sidebar.getSettings();
+                sidebar.isBatchingNow = false;
+
+                if (settings.autoScroll === true) {
                     setTimeout(() => {
                         sidebar.toggleAutoScroll(true);
                     }, 1000);
-                } else {
-                    sidebar.isBatchingNow = false;
-                    sidebar.toggleAutoScroll(false);
-
-                    const toggle = document.getElementById('autoScrollToggle') as HTMLInputElement | null;
-                    if (toggle) {
-                        toggle.checked = false;
-                    }
-
-                    setTimeout(() => {
-                        alert(sidebar.t('state.batchComplete'));
-                    }, 500);
                 }
             })().catch((error) => console.error(error));
         }
