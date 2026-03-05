@@ -22,6 +22,19 @@ class PinVaultProBackground {
         this.setupContextMenu();
         this.setupDownloadHandlers();
         this.setupSidePanel();
+        void this.cleanupLegacySettings();
+    }
+
+    async cleanupLegacySettings() {
+        try {
+            const legacySettings = await chrome.storage.sync.get('privacyMode');
+            if (Object.prototype.hasOwnProperty.call(legacySettings, 'privacyMode')) {
+                await chrome.storage.sync.remove('privacyMode');
+                console.log('Removed legacy setting: privacyMode');
+            }
+        } catch (error) {
+            console.warn('Failed to clean legacy settings:', error);
+        }
     }
 
     setupEventListeners() {
