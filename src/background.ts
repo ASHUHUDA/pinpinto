@@ -1,4 +1,4 @@
-﻿// Background script for PinPinto Extension
+// Background script for PinPinto Extension
 import JSZip from 'jszip';
 import { PINTEREST_MATCH_PATTERNS, isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 
@@ -237,7 +237,13 @@ class PinVaultProBackground {
         try {
             console.log('Starting download for:', imageData);
 
-            const filename = this.generateFilename(imageData, settings.filenameFormat);
+            const singleTimestamp = this.formatLocalTimestamp();
+            const filename = this.buildIndexedFilename(
+                1,
+                singleTimestamp,
+                imageData.url,
+                imageData.originalFilename
+            );
             const folderPath = this.generateFolderPath(imageData, settings);
 
             const downloadOptions: chrome.downloads.DownloadOptions = {
@@ -255,11 +261,13 @@ class PinVaultProBackground {
             console.log('Download started with ID:', downloadId);
 
             // Track download
+            const requestedFilename = `${folderPath}/${filename}`;
             this.activeDownloads.set(downloadId, {
                 imageData,
                 settings,
                 startTime: Date.now(),
-                status: 'downloading'
+                status: 'downloading',
+                requestedFilename
             });
 
             return downloadId;
@@ -316,9 +324,8 @@ class PinVaultProBackground {
         let successfulImages = 0;
         let failedImages = 0;
 
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const folderName = `PinPinto_${timestamp}`;
-        const zipName = `${folderName}.zip`;
+        const batchTimestamp = this.formatLocalTimestamp();
+        const zipName = `PinPinto_${batchTimestamp}.zip`;
 
         console.log(`Starting download of ${totalImages} images as ZIP: ${zipName}`);
         this.sendProgressUpdate(0, `开始打包 ${totalImages} 张图片，请稍候...`);
@@ -328,7 +335,6 @@ class PinVaultProBackground {
             ? Math.floor(parsedBatchSize)
             : this.maxConcurrentDownloads;
         const zip = new JSZip();
-        const usedFilenames = new Set();
 
         for (let i = 0; i < images.length; i += batchSize) {
             const batch = images.slice(i, i + batchSize);
@@ -346,18 +352,22 @@ class PinVaultProBackground {
                         url: resolvedUrl,
                         title: typeof image === 'string' ? `Image_${i + batchIndex + 1}` : (image.title || `Image_${i + batchIndex + 1}`),
                         board: typeof image === 'string' ? 'Pinterest' : (image.board || 'Pinterest'),
-                        folder: folderName,
                         originalFilename: typeof image === 'string'
                             ? this.extractFilenameFromUrl(resolvedUrl)
                             : (image.originalFilename || this.extractFilenameFromUrl(resolvedUrl))
                     };
 
-                    const filename = this.generateFilename(imageData, settings.filenameFormat);
-                    const uniqueFilename = this.ensureUniqueFilename(filename, usedFilenames);
-                    zip.file(uniqueFilename, arrayBuffer);
+                    const imageSequence = successfulImages + 1;
+                    const filename = this.buildIndexedFilename(
+                        imageSequence,
+                        batchTimestamp,
+                        resolvedUrl,
+                        imageData.originalFilename
+                    );
+                    zip.file(filename, arrayBuffer);
 
-                    completedImages++;
                     successfulImages++;
+                    completedImages++;
                     const progress = (completedImages / totalImages) * 50;
                     this.sendProgressUpdate(progress, `已获取 ${completedImages}/${totalImages} 张图片`);
 
@@ -412,9 +422,10 @@ class PinVaultProBackground {
             this.sendProgressUpdate(95, '打包完成，正在触发下载...');
 
             const zipDataUrl = `data:application/zip;base64,${zipBase64}`;
+            const zipDownloadFilename = `PinPinto/${zipName}`;
             const downloadId = await chrome.downloads.download({
                 url: zipDataUrl,
-                filename: zipName,
+                filename: zipDownloadFilename,
                 conflictAction: 'uniquify'
             });
 
@@ -423,7 +434,8 @@ class PinVaultProBackground {
                 settings,
                 startTime: Date.now(),
                 status: 'downloading',
-                isBatch: true
+                isBatch: true,
+                requestedFilename: zipDownloadFilename
             });
 
             console.log(`ZIP download started with ID: ${downloadId}`);
@@ -636,7 +648,12 @@ class PinVaultProBackground {
         // Allow custom filename logic if needed
         const downloadInfo = this.activeDownloads.get(downloadItem.id);
 
-        if (downloadInfo && downloadInfo.settings.customPath) {
+        if (downloadInfo?.requestedFilename) {
+            suggest({
+                filename: downloadInfo.requestedFilename,
+                conflictAction: 'uniquify'
+            });
+        } else if (downloadInfo && downloadInfo.settings.customPath) {
             suggest({
                 filename: downloadInfo.settings.customPath + '/' + downloadItem.filename,
                 conflictAction: 'uniquify'
@@ -647,20 +664,66 @@ class PinVaultProBackground {
     }
 
     generateFilename(imageData, format) {
-        const date = new Date().toISOString().split('T')[0];
-        const sanitize = (str) => str.replace(/[^a-z0-9\-_\.]/gi, '_').substring(0, 100);
+        const timestamp = this.formatLocalTimestamp();
+        return this.buildIndexedFilename(1, timestamp, imageData.url, imageData.originalFilename);
+    }
 
-        switch (format) {
-            case 'board_title_date':
-                return `${sanitize(imageData.board || 'pinterest')}_${sanitize(imageData.title || 'image')}_${date}.jpg`;
-            case 'title_only':
-                return `${sanitize(imageData.title || 'image')}.jpg`;
-            case 'original':
-                return imageData.originalFilename || `image_${Date.now()}.jpg`;
-            case 'title_date':
-            default:
-                return `${sanitize(imageData.title || 'image')}_${date}.jpg`;
+    formatLocalTimestamp(date = new Date()) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hour = String(date.getHours()).padStart(2, '0');
+        const minute = String(date.getMinutes()).padStart(2, '0');
+        const second = String(date.getSeconds()).padStart(2, '0');
+        return `${year}${month}${day}_${hour}${minute}${second}`;
+    }
+
+    buildIndexedFilename(sequence, timestamp, url, originalFilename) {
+        const paddedSequence = sequence < 1000 ? String(sequence).padStart(3, '0') : String(sequence);
+        const extension = this.resolveImageExtension(url, originalFilename);
+        return `${paddedSequence}-${timestamp}.${extension}`;
+    }
+
+    resolveImageExtension(url, originalFilename) {
+        const fromOriginal = this.extractExtensionFromPath(originalFilename);
+        if (fromOriginal) {
+            return fromOriginal;
         }
+
+        const fromUrl = this.extractExtensionFromPath(url);
+        if (fromUrl) {
+            return fromUrl;
+        }
+
+        return 'jpg';
+    }
+
+    extractExtensionFromPath(pathValue) {
+        if (typeof pathValue !== 'string' || !pathValue) {
+            return '';
+        }
+
+        const cleanPath = pathValue.split('?')[0].split('#')[0];
+        const lastSegment = cleanPath.split('/').pop() || '';
+        const dotIndex = lastSegment.lastIndexOf('.');
+
+        if (dotIndex <= -1 || dotIndex === lastSegment.length - 1) {
+            return '';
+        }
+
+        const rawExtension = lastSegment.slice(dotIndex + 1).toLowerCase();
+        if (!/^[a-z0-9]{1,8}$/.test(rawExtension)) {
+            return '';
+        }
+
+        if (rawExtension === 'jpeg' || rawExtension === 'jpe' || rawExtension === 'jfif') {
+            return 'jpg';
+        }
+        if (rawExtension === 'tiff') {
+            return 'tif';
+        }
+
+        return rawExtension;
     }
 
     generateFolderPath(imageData, settings) {
