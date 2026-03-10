@@ -2,6 +2,9 @@
 import JSZip from 'jszip';
 import { PINTEREST_MATCH_PATTERNS, isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 
+const IMAGE_FETCH_MAX_RETRIES = 3;
+const IMAGE_FETCH_TIMEOUT_MS = 15000;
+
 class PinVaultProBackground {
     activeDownloads: Map<number, any>;
     downloadQueue: any[];
@@ -353,7 +356,10 @@ class PinVaultProBackground {
                         throw new Error('图片 URL 无效');
                     }
 
-                    const { arrayBuffer, resolvedUrl } = await this.fetchImageArrayBuffer(candidateUrls);
+                    const { arrayBuffer, resolvedUrl } = await this.fetchImageArrayBuffer(
+                        candidateUrls,
+                        IMAGE_FETCH_MAX_RETRIES
+                    );
 
                     const imageData = {
                         url: resolvedUrl,
@@ -387,9 +393,11 @@ class PinVaultProBackground {
                     this.sendProgressUpdate(progress, `已处理 ${completedImages}/${totalImages} 张（失败 ${failedImages} 张）`);
 
                     const imageId = typeof image === 'string' ? `img_${i + batchIndex}` : (image.id || `img_${i + batchIndex}`);
+                    const baseErrorMessage = error instanceof Error ? error.message : String(error);
+                    const errorMessage = `${baseErrorMessage}（已跳过）`;
                     return {
                         success: false,
-                        error: error instanceof Error ? error.message : String(error),
+                        error: errorMessage,
                         imageId
                     };
                 }
@@ -502,34 +510,54 @@ class PinVaultProBackground {
         return Array.from(new Set(candidates));
     }
 
-    async fetchImageArrayBuffer(candidateUrls) {
+    async fetchImageArrayBuffer(candidateUrls, maxRetries = IMAGE_FETCH_MAX_RETRIES) {
         let lastError = new Error('图片获取失败');
 
-        // 先尝试高清 URL，再回退原始 URL，避免因某些图片没有 originals 目录导致整批失败。
-        for (const url of candidateUrls) {
-            try {
-                const response = await fetch(url, { cache: 'no-store' });
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+        // 单图最多重试 3 次；失败则返回错误给当前图片并继续后续图片，避免整批中断。
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            // 先尝试高清 URL，再回退原始 URL，避免 originals 不存在时整图失败。
+            for (const url of candidateUrls) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+                    const response = await fetch(url, {
+                        cache: 'no-store',
+                        signal: controller.signal
+                    }).finally(() => {
+                        clearTimeout(timeoutId);
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
 
-                const contentType = response.headers.get('content-type') || '';
-                if (contentType && !contentType.startsWith('image/')) {
-                    throw new Error(`非图片响应: ${contentType}`);
-                }
+                    const contentType = response.headers.get('content-type') || '';
+                    if (contentType && !contentType.startsWith('image/')) {
+                        throw new Error(`非图片响应: ${contentType}`);
+                    }
 
-                const arrayBuffer = await response.arrayBuffer();
-                if (arrayBuffer.byteLength === 0) {
-                    throw new Error('图片内容为空');
-                }
+                    const arrayBuffer = await response.arrayBuffer();
+                    if (arrayBuffer.byteLength === 0) {
+                        throw new Error('图片内容为空');
+                    }
 
-                return { arrayBuffer, resolvedUrl: url };
-            } catch (error) {
-                lastError = error instanceof Error ? error : new Error(String(error));
+                    return { arrayBuffer, resolvedUrl: url };
+                } catch (error) {
+                    if (error instanceof Error && error.name === 'AbortError') {
+                        lastError = new Error(`请求超时（>${IMAGE_FETCH_TIMEOUT_MS / 1000}秒）：${url}`);
+                    } else {
+                        lastError = error instanceof Error ? error : new Error(String(error));
+                    }
+                }
+            }
+
+            if (attempt < maxRetries) {
+                // 简单线性退避，降低瞬时网络抖动导致的连续失败概率。
+                await new Promise((resolve) => setTimeout(resolve, attempt * 300));
             }
         }
 
-        throw lastError;
+        const lastMessage = lastError?.message || '未知错误';
+        throw new Error(`图片获取失败（已重试 ${maxRetries} 次）：${lastMessage}`);
     }
 
     ensureUniqueFilename(filename, usedFilenames) {

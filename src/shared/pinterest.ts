@@ -30,6 +30,20 @@ export const PINTEREST_MATCH_PATTERNS = PINTEREST_DOMAINS.map(
 export const PINIMG_MATCH_PATTERNS = ['*://*.pinimg.com/*', '*://pinimg.com/*'] as const;
 
 export function isPinterestUrl(url: string): boolean {
-  return PINTEREST_DOMAINS.some((domain) => url.includes(domain));
+  if (typeof url !== 'string' || !url) {
+    return false;
+  }
+
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  return PINTEREST_DOMAINS.some((domain) => {
+    const normalizedDomain = domain.toLowerCase();
+    return hostname === normalizedDomain || hostname.endsWith(`.${normalizedDomain}`);
+  });
 }
 

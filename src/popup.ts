@@ -1,4 +1,4 @@
-import { isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
 
@@ -18,6 +18,7 @@ type PopupSettings = {
 };
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
+const AUTO_BATCH_DOWNLOAD_LIMIT = 100;
 
 class PinVaultProPopup {
     selectedImages: Set<string>;
@@ -25,6 +26,8 @@ class PinVaultProPopup {
     isAutoScrolling: boolean;
     autoScrollStatsTimer: number | null;
     statsUpdateTimer: number | null;
+    batchCount: number;
+    isBatchingNow: boolean;
     language: SupportedLanguage;
     translations: typeof POPUP_STATUS_TRANSLATIONS;
     staticTranslations: typeof POPUP_STATIC_TRANSLATIONS;
@@ -35,6 +38,8 @@ class PinVaultProPopup {
         this.isAutoScrolling = false;
         this.autoScrollStatsTimer = null;
         this.statsUpdateTimer = null;
+        this.batchCount = 0;
+        this.isBatchingNow = false;
         this.language = DEFAULT_LANGUAGE;
         this.translations = POPUP_STATUS_TRANSLATIONS;
         this.staticTranslations = POPUP_STATIC_TRANSLATIONS;
@@ -246,10 +251,34 @@ class PinVaultProPopup {
     }
 
     async getActivePinterestTab() {
-        const tab = await this.getActiveTab();
-        if (tab?.id && tab.url && this.isPinterestUrl(tab.url)) {
-            return tab;
+        const activeTab = await this.getActiveTab();
+        if (activeTab?.id && activeTab.url && this.isPinterestUrl(activeTab.url)) {
+            return activeTab;
         }
+
+        const { [SIDEBAR_TARGET_TAB_KEY]: storedTabId } = await chrome.storage.local.get(SIDEBAR_TARGET_TAB_KEY);
+        if (typeof storedTabId === 'number') {
+            try {
+                const storedTab = await chrome.tabs.get(storedTabId);
+                if (storedTab?.id && storedTab.url && this.isPinterestUrl(storedTab.url)) {
+                    return storedTab;
+                }
+            } catch {
+                // ignore missing/closed tab
+            }
+        }
+
+        const pinterestTabs = await chrome.tabs.query({
+            currentWindow: true,
+            url: PINTEREST_MATCH_PATTERNS
+        });
+
+        const matchedTab = pinterestTabs.find((tab) => tab.id && tab.url && this.isPinterestUrl(tab.url));
+        if (matchedTab?.id) {
+            await this.rememberSidebarTargetTab(matchedTab.id);
+            return matchedTab;
+        }
+
         return null;
     }
 
@@ -418,7 +447,8 @@ class PinVaultProPopup {
         }
     }
 
-    async toggleAutoScroll(enabled: boolean) {
+    async toggleAutoScroll(enabled: boolean, options: { resetBatchState?: boolean } = {}) {
+        const shouldResetBatchState = options.resetBatchState !== false;
         try {
             const tab = await this.getActivePinterestTab();
             if (!tab?.id) return;
@@ -433,8 +463,49 @@ class PinVaultProPopup {
                     clearInterval(this.autoScrollStatsTimer);
                 }
 
+                if (shouldResetBatchState) {
+                    this.batchCount = 0;
+                }
+                this.isBatchingNow = false;
+
                 this.autoScrollStatsTimer = window.setInterval(async () => {
+                    if (this.isBatchingNow) return;
+
                     await this.updateImageCounts();
+
+                    const settings = await this.getSettings();
+                    if (settings.autoBatchDownload !== true) {
+                        return;
+                    }
+
+                    const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
+                    const targetThreshold = (this.batchCount + 1) * AUTO_BATCH_DOWNLOAD_LIMIT;
+
+                    if (total < targetThreshold) {
+                        return;
+                    }
+
+                    const targetTab = await this.getActivePinterestTab();
+                    if (!targetTab?.id) {
+                        return;
+                    }
+
+                    this.isBatchingNow = true;
+
+                    try {
+                        await this.ensureContentScriptInjected(targetTab.id);
+                        await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
+                        await chrome.tabs.sendMessage(targetTab.id, { action: 'selectAllImages' });
+                        setTimeout(async () => {
+                            const started = await this.startDownload({ autoBatchMode: true });
+                            if (!started) {
+                                this.isBatchingNow = false;
+                            }
+                        }, 500);
+                    } catch (error) {
+                        console.error('Error during auto-batch:', error);
+                        this.isBatchingNow = false;
+                    }
                 }, 1000);
             } else {
                 await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
@@ -445,6 +516,7 @@ class PinVaultProPopup {
                     this.autoScrollStatsTimer = null;
                 }
 
+                this.isBatchingNow = false;
                 setTimeout(() => this.updateImageCounts(), 500);
             }
 
@@ -472,22 +544,37 @@ class PinVaultProPopup {
         }
     }
 
-    async startDownload() {
+    async startDownload(options: { autoBatchMode?: boolean } = {}): Promise<boolean> {
+        const autoBatchMode = options.autoBatchMode === true;
+
         try {
             const tab = await this.getActivePinterestTab();
             if (!tab?.id) {
-                alert(this.language === 'zh' ? '请先打开 Pinterest。' : 'Please open Pinterest first.');
-                return;
+                if (!autoBatchMode) {
+                    alert(this.language === 'zh' ? '请先打开 Pinterest。' : 'Please open Pinterest first.');
+                }
+                return false;
             }
 
             await this.updateImageCounts();
+            const settings = await this.getSettings();
+
+            if (autoBatchMode) {
+                try {
+                    await this.ensureContentScriptInjected(tab.id);
+                    await chrome.tabs.sendMessage(tab.id, { action: 'selectAllImages' });
+                    await new Promise((resolve) => setTimeout(resolve, 250));
+                } catch {
+                    // ignore and continue with fallbacks
+                }
+            }
 
             let selectedImages: any[] = [];
             try {
                 await this.ensureContentScriptInjected(tab.id);
                 const response = await chrome.tabs.sendMessage(tab.id, {
                     action: 'getSelectedImages',
-                    settings: await this.getSettings()
+                    settings
                 });
                 if (response?.images?.length) {
                     selectedImages = response.images;
@@ -509,7 +596,7 @@ class PinVaultProPopup {
                                 imageData.push({
                                     id: `img_${Date.now()}_${index}`,
                                     url: image.src,
-                                    title: image.alt || image.title || `Pinterest 鍥剧墖 ${index + 1}`,
+                                    title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
                                     board: document.title || 'Pinterest',
                                     domain: window.location.hostname,
                                     originalFilename: image.src.split('/').pop()
@@ -526,9 +613,53 @@ class PinVaultProPopup {
                 }
             }
 
+            if (selectedImages.length === 0 && autoBatchMode) {
+                const results = await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: () => {
+                        const allImages = document.querySelectorAll('img[src*="pinimg.com"], img[data-src*="pinimg.com"]');
+                        const imageData: Array<{ id: string; url: string; title: string; board: string; domain: string; originalFilename: string | undefined }> = [];
+
+                        allImages.forEach((img, index) => {
+                            const image = img as HTMLImageElement;
+                            const src = image.src || image.getAttribute('data-src') || '';
+                            if (!src || !src.includes('pinimg.com')) return;
+
+                            imageData.push({
+                                id: `img_${Date.now()}_${index}`,
+                                url: src,
+                                title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
+                                board: document.title || 'Pinterest',
+                                domain: window.location.hostname,
+                                originalFilename: src.split('/').pop()
+                            });
+                        });
+
+                        return imageData;
+                    }
+                });
+
+                if (results?.[0]?.result?.length) {
+                    selectedImages = results[0].result;
+                }
+            }
+
             if (selectedImages.length === 0) {
-                alert(this.language === 'zh' ? '请先选图。' : 'Please select images first.');
-                return;
+                if (!autoBatchMode) {
+                    alert(this.language === 'zh' ? '请先选图。' : 'Please select images first.');
+                }
+                return false;
+            }
+
+            if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > AUTO_BATCH_DOWNLOAD_LIMIT) {
+                // 自动批量按批次窗口取图，避免每轮都重复首批 100 张。
+                const windowStart = this.batchCount * AUTO_BATCH_DOWNLOAD_LIMIT;
+                if (windowStart < selectedImages.length) {
+                    selectedImages = selectedImages.slice(windowStart, windowStart + AUTO_BATCH_DOWNLOAD_LIMIT);
+                } else {
+                    // 防御性兜底：窗口越界时取最新一批，避免空下载或重复首批。
+                    selectedImages = selectedImages.slice(-AUTO_BATCH_DOWNLOAD_LIMIT);
+                }
             }
 
             this.showProgress();
@@ -537,28 +668,45 @@ class PinVaultProPopup {
                 {
                     action: 'downloadImages',
                     images: selectedImages,
-                    settings: await this.getSettings()
+                    settings
                 },
                 (response) => {
                     if (chrome.runtime.lastError) {
-                        const prefix = this.language === 'zh' ? '启动下载失败：' : 'Failed to start download: ';
-                        alert(`${prefix}${chrome.runtime.lastError.message}`);
-                        this.hideProgress();
+                        const errorText = `${this.language === 'zh' ? '启动下载失败：' : 'Failed to start download: '}${chrome.runtime.lastError.message}`;
+                        this.updateProgress(100, errorText);
+                        if (!autoBatchMode) {
+                            alert(errorText);
+                            this.hideProgress();
+                        } else {
+                            this.isBatchingNow = false;
+                        }
                         return;
                     }
 
                     if (!response?.success) {
-            const prefix = this.language === 'zh' ? '下载失败：' : 'Download failed: ';
-                        alert(`${prefix}${response?.error || 'Unknown error'}`);
-                        this.hideProgress();
+                        const errorText = `${this.language === 'zh' ? '下载失败：' : 'Download failed: '}${response?.error || 'Unknown error'}`;
+                        this.updateProgress(100, errorText);
+                        if (!autoBatchMode) {
+                            alert(errorText);
+                            this.hideProgress();
+                        } else {
+                            this.isBatchingNow = false;
+                        }
                     }
                 }
             );
+            return true;
         } catch (error) {
             console.error('Error starting download:', error);
-                        const prefix = this.language === 'zh' ? '下载失败：' : 'Download failed: ';
-            alert(`${prefix}${error instanceof Error ? error.message : String(error)}`);
-            this.hideProgress();
+            const errorText = `${this.language === 'zh' ? '下载失败：' : 'Download failed: '}${error instanceof Error ? error.message : String(error)}`;
+            this.updateProgress(100, errorText);
+            if (!autoBatchMode) {
+                alert(errorText);
+                this.hideProgress();
+            } else {
+                this.isBatchingNow = false;
+            }
+            return false;
         }
     }
 
@@ -576,7 +724,7 @@ class PinVaultProPopup {
         if (progressSection) progressSection.style.display = 'block';
         if (progressFill) (progressFill as HTMLElement).style.width = '0%';
         if (progressText) progressText.textContent = '0%';
-        if (progressDetails) progressDetails.textContent = this.language === 'zh' ? '鍑嗗涓嬭浇...' : 'Preparing download...';
+        if (progressDetails) progressDetails.textContent = this.language === 'zh' ? '准备下载...' : 'Preparing download...';
     }
 
     hideProgress() {
@@ -791,9 +939,35 @@ chrome.runtime.onMessage.addListener((message) => {
     } else if (message.action === 'downloadComplete') {
         popupInstance.hideProgress();
         popupInstance.updateImageCounts();
+
+        if (popupInstance.isBatchingNow) {
+            popupInstance.batchCount++;
+
+            (async () => {
+                const tab = await popupInstance.getActivePinterestTab();
+                if (!tab?.id) {
+                    popupInstance.isBatchingNow = false;
+                    return;
+                }
+
+                chrome.tabs.sendMessage(tab.id, { action: 'deselectAllImages' }).catch(() => {
+                    // ignore
+                });
+
+                const settings = await popupInstance.getSettings();
+                popupInstance.isBatchingNow = false;
+
+                if (settings.autoScroll === true) {
+                    setTimeout(() => {
+                        popupInstance.toggleAutoScroll(true, { resetBatchState: false });
+                    }, 1000);
+                }
+            })().catch((error) => console.error(error));
+        }
     } else if (message.action === 'downloadError') {
-        popupInstance.hideProgress();
         const prefix = popupInstance.language === 'zh' ? '下载失败：' : 'Download failed: ';
+        popupInstance.updateProgress(100, `${prefix}${message.error}`);
+        popupInstance.isBatchingNow = false;
         alert(`${prefix}${message.error}`);
     }
 });
