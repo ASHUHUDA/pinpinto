@@ -1,9 +1,10 @@
 import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
+import { shouldTriggerAutoBatch, sliceBatchWindow } from './shared/download-batching';
+import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
-const AUTO_BATCH_DOWNLOAD_LIMIT = 100;
 
 class PinVaultProSidebar {
     statsUpdateTimer: number | null = null;
@@ -385,26 +386,22 @@ class PinVaultProSidebar {
                     await this.updateStats();
 
                     const settings = await this.getSettings();
-                    if (settings.autoBatchDownload) {
-                        const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
-                        const targetThreshold = (this.batchCount + 1) * AUTO_BATCH_DOWNLOAD_LIMIT;
+                    const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
+                    if (shouldTriggerAutoBatch(total, this.batchCount, settings.autoBatchDownload === true)) {
+                        this.isBatchingNow = true;
 
-                        if (total >= targetThreshold) {
-                            this.isBatchingNow = true;
-
-                            try {
-                                await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
-                                await chrome.tabs.sendMessage(targetTab.id, { action: 'selectAllImages' });
-                                setTimeout(async () => {
-                                    const started = await this.startDownload({ autoBatchMode: true });
-                                    if (!started) {
-                                        this.isBatchingNow = false;
-                                    }
-                                }, 500);
-                            } catch (error) {
-                                console.error('Error during auto-batch:', error);
-                                this.isBatchingNow = false;
-                            }
+                        try {
+                            await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
+                            await chrome.tabs.sendMessage(targetTab.id, { action: 'selectAllImages' });
+                            setTimeout(async () => {
+                                const started = await this.startDownload({ autoBatchMode: true });
+                                if (!started) {
+                                    this.isBatchingNow = false;
+                                }
+                            }, 500);
+                        } catch (error) {
+                            console.error('Error during auto-batch:', error);
+                            this.isBatchingNow = false;
                         }
                     }
                 }, 1000);
@@ -496,15 +493,9 @@ class PinVaultProSidebar {
                 return false;
             }
 
-            if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > AUTO_BATCH_DOWNLOAD_LIMIT) {
+            if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > 0) {
                 // 自动批量按批次窗口取图，避免每轮都重复首批 100 张。
-                const windowStart = this.batchCount * AUTO_BATCH_DOWNLOAD_LIMIT;
-                if (windowStart < selectedImages.length) {
-                    selectedImages = selectedImages.slice(windowStart, windowStart + AUTO_BATCH_DOWNLOAD_LIMIT);
-                } else {
-                    // 防御性兜底：窗口越界时取最新一批，避免空下载或重复首批。
-                    selectedImages = selectedImages.slice(-AUTO_BATCH_DOWNLOAD_LIMIT);
-                }
+                selectedImages = sliceBatchWindow(selectedImages, this.batchCount);
             }
 
             this.showProgress();
@@ -591,9 +582,7 @@ class PinVaultProSidebar {
         try {
             const settings = await chrome.storage.sync.get({
                 language: 'en',
-                highQuality: true,
-                autoScroll: false,
-                autoBatchDownload: false
+                ...SHARED_DOWNLOAD_SETTINGS_DEFAULTS
             });
 
             this.language = normalizeLanguage(settings.language);
@@ -618,24 +607,10 @@ class PinVaultProSidebar {
 
     async getSettings() {
         try {
-            return await chrome.storage.sync.get({
-                highQuality: true,
-                autoScroll: false,
-                autoBatchDownload: false,
-                filenameFormat: 'title_date',
-                folderOrganization: 'date',
-                customFolder: ''
-            });
+            return await chrome.storage.sync.get(SHARED_DOWNLOAD_SETTINGS_DEFAULTS);
         } catch (error) {
             console.error('Error getting settings:', error);
-            return {
-                highQuality: true,
-                autoScroll: false,
-                autoBatchDownload: false,
-                filenameFormat: 'title_date',
-                folderOrganization: 'date',
-                customFolder: ''
-            };
+            return { ...SHARED_DOWNLOAD_SETTINGS_DEFAULTS };
         }
     }
 }

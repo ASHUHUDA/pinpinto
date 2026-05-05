@@ -1,6 +1,24 @@
 // Background script for PinPinto Extension
 import JSZip from 'jszip';
 import { PINTEREST_MATCH_PATTERNS, isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import {
+    getDownloadCandidateUrls as getDownloadCandidateUrlsHelper,
+    getHighQualityUrl as getHighQualityUrlHelper,
+    normalizeImageUrlForDeduplication as normalizeImageUrlForDeduplicationHelper
+} from './background/image-url';
+import {
+    buildIndexedFilename as buildIndexedFilenameHelper,
+    buildSingleFilename as buildSingleFilenameHelper,
+    ensureUniqueFilename as ensureUniqueFilenameHelper,
+    extractExtensionFromPath as extractExtensionFromPathHelper,
+    extractFilenameFromUrl as extractFilenameFromUrlHelper,
+    formatLocalTimestamp as formatLocalTimestampHelper,
+    resolveImageExtension as resolveImageExtensionHelper
+} from './background/filename';
+import {
+    extractDomainFromUrl as extractDomainFromUrlHelper,
+    generateFolderPath as generateFolderPathHelper
+} from './background/folder-path';
 
 const IMAGE_FETCH_MAX_RETRIES = 3;
 const IMAGE_FETCH_TIMEOUT_MS = 15000;
@@ -479,35 +497,11 @@ class PinVaultProBackground {
     }
 
     normalizeImageUrlForDeduplication(image, settings) {
-        const rawUrl = typeof image === 'string' ? image : image?.url;
-        if (typeof rawUrl !== 'string' || !rawUrl) {
-            return '';
-        }
-
-        if (settings?.highQuality === false || !rawUrl.includes('pinimg.com')) {
-            return rawUrl;
-        }
-
-        return this.getHighQualityUrl(rawUrl);
+        return normalizeImageUrlForDeduplicationHelper(image, settings, (url) => this.getHighQualityUrl(url));
     }
 
     getDownloadCandidateUrls(rawUrl, highQualityEnabled) {
-        if (typeof rawUrl !== 'string' || !rawUrl) {
-            return [];
-        }
-
-        const candidates = [];
-        if (highQualityEnabled && rawUrl.includes('pinimg.com')) {
-            const highQualityUrl = this.getHighQualityUrl(rawUrl);
-            candidates.push(highQualityUrl);
-            if (highQualityUrl !== rawUrl) {
-                candidates.push(rawUrl);
-            }
-        } else {
-            candidates.push(rawUrl);
-        }
-
-        return Array.from(new Set(candidates));
+        return getDownloadCandidateUrlsHelper(rawUrl, highQualityEnabled, (url) => this.getHighQualityUrl(url));
     }
 
     async fetchImageArrayBuffer(candidateUrls, maxRetries = IMAGE_FETCH_MAX_RETRIES) {
@@ -561,24 +555,7 @@ class PinVaultProBackground {
     }
 
     ensureUniqueFilename(filename, usedFilenames) {
-        if (!usedFilenames.has(filename)) {
-            usedFilenames.add(filename);
-            return filename;
-        }
-
-        const dotIndex = filename.lastIndexOf('.');
-        const baseName = dotIndex >= 0 ? filename.slice(0, dotIndex) : filename;
-        const extension = dotIndex >= 0 ? filename.slice(dotIndex) : '';
-
-        let index = 2;
-        let candidate = `${baseName}_${index}${extension}`;
-        while (usedFilenames.has(candidate)) {
-            index++;
-            candidate = `${baseName}_${index}${extension}`;
-        }
-
-        usedFilenames.add(candidate);
-        return candidate;
+        return ensureUniqueFilenameHelper(filename, usedFilenames);
     }
 
     async cancelDownload(downloadId) {
@@ -704,169 +681,36 @@ class PinVaultProBackground {
     }
 
     formatLocalTimestamp(date = new Date()) {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hour = String(date.getHours()).padStart(2, '0');
-        const minute = String(date.getMinutes()).padStart(2, '0');
-        const second = String(date.getSeconds()).padStart(2, '0');
-        return `${year}${month}${day}_${hour}${minute}${second}`;
+        return formatLocalTimestampHelper(date);
     }
 
     buildSingleFilename(timestamp, url, originalFilename) {
-        const extension = this.resolveImageExtension(url, originalFilename);
-        return `PinPinto-${timestamp}.${extension}`;
+        return buildSingleFilenameHelper(timestamp, url, originalFilename);
     }
 
     buildIndexedFilename(sequence, timestamp, url, originalFilename) {
-        const paddedSequence = sequence < 1000 ? String(sequence).padStart(3, '0') : String(sequence);
-        const extension = this.resolveImageExtension(url, originalFilename);
-        return `${paddedSequence}-${timestamp}.${extension}`;
+        return buildIndexedFilenameHelper(sequence, timestamp, url, originalFilename);
     }
 
     resolveImageExtension(url, originalFilename) {
-        const fromOriginal = this.extractExtensionFromPath(originalFilename);
-        if (fromOriginal) {
-            return fromOriginal;
-        }
-
-        const fromUrl = this.extractExtensionFromPath(url);
-        if (fromUrl) {
-            return fromUrl;
-        }
-
-        return 'jpg';
+        return resolveImageExtensionHelper(url, originalFilename);
     }
 
     extractExtensionFromPath(pathValue) {
-        if (typeof pathValue !== 'string' || !pathValue) {
-            return '';
-        }
-
-        const cleanPath = pathValue.split('?')[0].split('#')[0];
-        const lastSegment = cleanPath.split('/').pop() || '';
-        const dotIndex = lastSegment.lastIndexOf('.');
-
-        if (dotIndex <= -1 || dotIndex === lastSegment.length - 1) {
-            return '';
-        }
-
-        const rawExtension = lastSegment.slice(dotIndex + 1).toLowerCase();
-        if (!/^[a-z0-9]{1,8}$/.test(rawExtension)) {
-            return '';
-        }
-
-        if (rawExtension === 'jpeg' || rawExtension === 'jpe' || rawExtension === 'jfif') {
-            return 'jpg';
-        }
-        if (rawExtension === 'tiff') {
-            return 'tif';
-        }
-
-        return rawExtension;
+        return extractExtensionFromPathHelper(pathValue);
     }
 
     generateFolderPath(imageData, settings) {
-        // If a specific folder is provided (like from sidebar), use it
-        if (imageData.folder) {
-            return `PinPinto Downloads/${imageData.folder}`;
-        }
-
-        const sanitize = (str) => str.replace(/[^a-z0-9\-_\.]/gi, '_').substring(0, 50);
-        const date = new Date();
-        const dateStr = date.toISOString().split('T')[0];
-        const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-
-        // Base folder
-        let folderPath = 'PinPinto Downloads';
-
-        // Add organization based on settings
-        switch (settings.folderOrganization || 'date') {
-            case 'board':
-                // Organize by Pinterest board
-                const boardName = sanitize(imageData.board || 'General');
-                folderPath += `/${boardName}`;
-                break;
-
-            case 'date':
-                // Organize by date (default)
-                folderPath += `/${dateStr}`;
-                break;
-
-            case 'month':
-                // Organize by month-year
-                folderPath += `/${monthYear}`;
-                break;
-
-            case 'board_date':
-                // Organize by board, then date
-                const board = sanitize(imageData.board || 'General');
-                folderPath += `/${board}/${dateStr}`;
-                break;
-
-            case 'domain':
-                // Organize by Pinterest domain
-                const domain = this.extractDomainFromUrl(imageData.url) || 'Pinterest';
-                folderPath += `/${domain}`;
-                break;
-
-            case 'custom':
-                // Custom folder if specified
-                if (settings.customFolder) {
-                    folderPath += `/${sanitize(settings.customFolder)}`;
-                }
-                break;
-
-            case 'none':
-            default:
-                // No additional organization
-                break;
-        }
-
-        return folderPath;
+        return generateFolderPathHelper(imageData, settings);
     }
 
     extractDomainFromUrl(url) {
-        try {
-            const domain = new URL(url).hostname;
-            // Extract country-specific Pinterest domain
-            if (domain.includes('pinterest.')) {
-                const parts = domain.split('.');
-                if (parts.length > 2) {
-                    return `Pinterest_${parts[parts.length - 1].toUpperCase()}`;
-                }
-                return 'Pinterest';
-            }
-            return domain;
-        } catch (error) {
-            return 'Unknown';
-        }
+        return extractDomainFromUrlHelper(url);
     }
 
     getHighQualityUrl(url) {
         if (url.includes('pinimg.com')) {
-            // Convert to highest quality Pinterest URL
-            let highQualityUrl = url;
-
-            // Replace various size patterns with originals
-            highQualityUrl = highQualityUrl.replace(/\/\d+x\//, '/originals/');
-            highQualityUrl = highQualityUrl.replace(/\/\d+x\d+\//, '/originals/');
-            highQualityUrl = highQualityUrl.replace(/\/\d+x\d+_/, '/originals/');
-            highQualityUrl = highQualityUrl.replace(/_\d+x\d+\./, '_originals.');
-
-            // If no change was made, try another approach
-            if (highQualityUrl === url) {
-                // Try to replace the size directory with originals
-                const urlParts = highQualityUrl.split('/');
-                for (let i = 0; i < urlParts.length; i++) {
-                    if (urlParts[i].match(/^\d+x\d*$/)) {
-                        urlParts[i] = 'originals';
-                        break;
-                    }
-                }
-                highQualityUrl = urlParts.join('/');
-            }
-
+            const highQualityUrl = getHighQualityUrlHelper(url);
             console.log('Original URL:', url);
             console.log('High Quality URL:', highQualityUrl);
             return highQualityUrl;
@@ -890,8 +734,7 @@ class PinVaultProBackground {
     }
 
     extractFilenameFromUrl(url) {
-        const urlParts = url.split('/');
-        return urlParts[urlParts.length - 1] || 'image.jpg';
+        return extractFilenameFromUrlHelper(url);
     }
 
     getDownloadStats() {

@@ -1,6 +1,8 @@
 import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
+import { shouldTriggerAutoBatch, sliceBatchWindow } from './shared/download-batching';
+import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
 
 type PopupSettings = {
     language: SupportedLanguage;
@@ -18,7 +20,6 @@ type PopupSettings = {
 };
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
-const AUTO_BATCH_DOWNLOAD_LIMIT = 100;
 
 class PinVaultProPopup {
     selectedImages: Set<string>;
@@ -59,9 +60,7 @@ class PinVaultProPopup {
     async loadSettings() {
         const settings = (await chrome.storage.sync.get({
             language: 'en',
-            highQuality: true,
-            autoScroll: false,
-            autoBatchDownload: false,
+            ...SHARED_DOWNLOAD_SETTINGS_DEFAULTS,
             theme: 'default',
             advancedFeaturesEnabled: true,
             smartFeaturesEnabled: false,
@@ -479,9 +478,7 @@ class PinVaultProPopup {
                     }
 
                     const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
-                    const targetThreshold = (this.batchCount + 1) * AUTO_BATCH_DOWNLOAD_LIMIT;
-
-                    if (total < targetThreshold) {
+                    if (!shouldTriggerAutoBatch(total, this.batchCount, settings.autoBatchDownload === true)) {
                         return;
                     }
 
@@ -651,15 +648,9 @@ class PinVaultProPopup {
                 return false;
             }
 
-            if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > AUTO_BATCH_DOWNLOAD_LIMIT) {
+            if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > 0) {
                 // 自动批量按批次窗口取图，避免每轮都重复首批 100 张。
-                const windowStart = this.batchCount * AUTO_BATCH_DOWNLOAD_LIMIT;
-                if (windowStart < selectedImages.length) {
-                    selectedImages = selectedImages.slice(windowStart, windowStart + AUTO_BATCH_DOWNLOAD_LIMIT);
-                } else {
-                    // 防御性兜底：窗口越界时取最新一批，避免空下载或重复首批。
-                    selectedImages = selectedImages.slice(-AUTO_BATCH_DOWNLOAD_LIMIT);
-                }
+                selectedImages = sliceBatchWindow(selectedImages, this.batchCount);
             }
 
             this.showProgress();
@@ -743,14 +734,7 @@ class PinVaultProPopup {
     }
 
     async getSettings() {
-        return chrome.storage.sync.get({
-            highQuality: true,
-            autoScroll: false,
-            autoBatchDownload: false,
-            filenameFormat: 'title_date',
-            folderOrganization: 'date',
-            customFolder: ''
-        });
+        return chrome.storage.sync.get(SHARED_DOWNLOAD_SETTINGS_DEFAULTS);
     }
 
     async changeTheme(theme: string) {
