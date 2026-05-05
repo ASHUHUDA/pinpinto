@@ -1,7 +1,7 @@
 import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
-import { shouldTriggerAutoBatch, sliceBatchWindow } from './shared/download-batching';
+import { AUTO_BATCH_DOWNLOAD_LIMIT, getAutoBatchPlan, sliceBatchWindowFromIndex } from './shared/download-batching';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
@@ -11,6 +11,8 @@ class PinVaultProSidebar {
     autoScrollStatsTimer: number | null = null;
     batchCount: number = 0;
     isBatchingNow: boolean = false;
+    nextBatchStartIndex: number = 0;
+    activeAutoBatchSize: number = 0;
     language: SupportedLanguage = DEFAULT_LANGUAGE;
     translations: typeof SIDEBAR_STATUS_TRANSLATIONS = SIDEBAR_STATUS_TRANSLATIONS;
     staticTranslations: typeof SIDEBAR_STATIC_TRANSLATIONS = SIDEBAR_STATIC_TRANSLATIONS;
@@ -312,6 +314,14 @@ class PinVaultProSidebar {
         return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
+    async getAutoScrollStatus(tabId: number) {
+        try {
+            return await chrome.tabs.sendMessage(tabId, { action: 'getAutoScrollStatus' });
+        } catch {
+            return null;
+        }
+    }
+
     updateStatsDisplay(total: number, selected: number) {
         const totalImagesEl = document.getElementById('totalImages');
         const selectedCountEl = document.getElementById('selectedCount');
@@ -374,6 +384,8 @@ class PinVaultProSidebar {
 
                 if (shouldResetBatchState) {
                     this.batchCount = 0;
+                    this.nextBatchStartIndex = 0;
+                    this.activeAutoBatchSize = 0;
                 }
                 this.isBatchingNow = false;
 
@@ -383,26 +395,39 @@ class PinVaultProSidebar {
                     const targetTab = await this.resolveTargetTab();
                     if (!targetTab?.id) return;
 
+                    await this.ensureContentScriptInjected(targetTab.id);
                     await this.updateStats();
 
                     const settings = await this.getSettings();
                     const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
-                    if (shouldTriggerAutoBatch(total, this.batchCount, settings.autoBatchDownload === true)) {
-                        this.isBatchingNow = true;
+                    const autoScrollStatus = await this.getAutoScrollStatus(targetTab.id);
+                    const batchPlan = getAutoBatchPlan(total, this.nextBatchStartIndex, settings.autoBatchDownload === true, {
+                        autoScrollExhausted: autoScrollStatus?.stopReason === 'exhausted'
+                    });
+                    if (!batchPlan.shouldStart) {
+                        return;
+                    }
 
-                        try {
-                            await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
-                            await chrome.tabs.sendMessage(targetTab.id, { action: 'selectAllImages' });
-                            setTimeout(async () => {
-                                const started = await this.startDownload({ autoBatchMode: true });
-                                if (!started) {
-                                    this.isBatchingNow = false;
-                                }
-                            }, 500);
-                        } catch (error) {
-                            console.error('Error during auto-batch:', error);
-                            this.isBatchingNow = false;
-                        }
+                    this.isBatchingNow = true;
+
+                    try {
+                        await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
+                        await chrome.tabs.sendMessage(targetTab.id, { action: 'selectAllImages' });
+                        setTimeout(async () => {
+                            const started = await this.startDownload({
+                                autoBatchMode: true,
+                                batchStartIndex: batchPlan.startIndex,
+                                batchEndIndex: batchPlan.endIndex
+                            });
+                            if (!started) {
+                                this.isBatchingNow = false;
+                                this.activeAutoBatchSize = 0;
+                            }
+                        }, 500);
+                    } catch (error) {
+                        console.error('Error during auto-batch:', error);
+                        this.isBatchingNow = false;
+                        this.activeAutoBatchSize = 0;
                     }
                 }, 1000);
             } else {
@@ -413,6 +438,8 @@ class PinVaultProSidebar {
                     this.autoScrollStatsTimer = null;
                 }
 
+                this.isBatchingNow = false;
+                this.activeAutoBatchSize = 0;
                 setTimeout(() => this.updateStats(), 500);
             }
 
@@ -422,7 +449,7 @@ class PinVaultProSidebar {
         }
     }
 
-    async startDownload(options: { autoBatchMode?: boolean } = {}): Promise<boolean> {
+    async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}): Promise<boolean> {
         const autoBatchMode = options.autoBatchMode === true;
         try {
             const tab = await this.resolveTargetTab();
@@ -494,8 +521,19 @@ class PinVaultProSidebar {
             }
 
             if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > 0) {
-                // 自动批量按批次窗口取图，避免每轮都重复首批 100 张。
-                selectedImages = sliceBatchWindow(selectedImages, this.batchCount);
+                // 自动批量按已消费游标取图；滚动耗尽时允许最后一段不足 100 张，不重复已下载图片。
+                const batchStartIndex = typeof options.batchStartIndex === 'number'
+                    ? options.batchStartIndex
+                    : this.nextBatchStartIndex;
+                const batchEndIndex = typeof options.batchEndIndex === 'number'
+                    ? options.batchEndIndex
+                    : batchStartIndex + AUTO_BATCH_DOWNLOAD_LIMIT;
+                selectedImages = sliceBatchWindowFromIndex(selectedImages, batchStartIndex, batchEndIndex);
+                if (selectedImages.length === 0) {
+                    this.activeAutoBatchSize = 0;
+                    return false;
+                }
+                this.activeAutoBatchSize = selectedImages.length;
             }
 
             this.showProgress();
@@ -515,6 +553,7 @@ class PinVaultProSidebar {
                             this.hideProgress();
                         } else {
                             this.isBatchingNow = false;
+                            this.activeAutoBatchSize = 0;
                         }
                         return;
                     }
@@ -527,6 +566,7 @@ class PinVaultProSidebar {
                             this.hideProgress();
                         } else {
                             this.isBatchingNow = false;
+                            this.activeAutoBatchSize = 0;
                         }
                     }
                 }
@@ -541,6 +581,7 @@ class PinVaultProSidebar {
                 this.hideProgress();
             } else {
                 this.isBatchingNow = false;
+                this.activeAutoBatchSize = 0;
             }
             return false;
         }
@@ -627,11 +668,18 @@ chrome.runtime.onMessage.addListener((message) => {
         sidebar.updateStats();
 
         if (sidebar.isBatchingNow) {
+            const completedBatchSize = sidebar.activeAutoBatchSize
+                || (Array.isArray(message.results) ? message.results.length : 0);
+            sidebar.nextBatchStartIndex += completedBatchSize;
+            sidebar.activeAutoBatchSize = 0;
             sidebar.batchCount++;
 
             (async () => {
                 const tab = await sidebar.resolveTargetTab();
-                if (!tab?.id) return;
+                if (!tab?.id) {
+                    sidebar.isBatchingNow = false;
+                    return;
+                }
 
                 chrome.tabs.sendMessage(tab.id, { action: 'deselectAllImages' }).catch(() => {
                     // ignore
@@ -650,6 +698,7 @@ chrome.runtime.onMessage.addListener((message) => {
     } else if (message.action === 'downloadError') {
         sidebar.updateProgress(100, `${sidebar.t('alert.downloadFailed')} ${message.error}`);
         sidebar.isBatchingNow = false;
+        sidebar.activeAutoBatchSize = 0;
         alert(`${sidebar.t('alert.downloadFailed')} ${message.error}`);
     }
 });

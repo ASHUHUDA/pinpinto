@@ -23,6 +23,8 @@ if (window.pinVaultContentLoaded) {
         lastScrollHeight: number;
         scrollAttempts: number;
         maxScrollAttempts: number;
+        autoScrollStopReason: 'manual' | 'exhausted' | null;
+        autoScrollStoppedAt: number | null;
         scanTimeout?: number;
         contextMenuImage?: HTMLImageElement | null;
 
@@ -36,6 +38,8 @@ if (window.pinVaultContentLoaded) {
             this.lastScrollHeight = 0;
             this.scrollAttempts = 0;
             this.maxScrollAttempts = 5;
+            this.autoScrollStopReason = null;
+            this.autoScrollStoppedAt = null;
 
             // Make sure we're available on window immediately
             window.pinVaultContent = this;
@@ -105,6 +109,16 @@ if (window.pinVaultContentLoaded) {
                         case 'stopAutoScroll':
                             this.stopAutoScroll();
                             sendResponse({ success: true });
+                            break;
+
+                        case 'getAutoScrollStatus':
+                            sendResponse({
+                                isAutoScrolling: this.isAutoScrolling,
+                                stopReason: this.autoScrollStopReason,
+                                stoppedAt: this.autoScrollStoppedAt,
+                                scrollAttempts: this.scrollAttempts,
+                                maxScrollAttempts: this.maxScrollAttempts
+                            });
                             break;
 
                         case 'getSelectedImages':
@@ -456,6 +470,8 @@ if (window.pinVaultContentLoaded) {
             this.isAutoScrolling = true;
             this.lastScrollHeight = document.body.scrollHeight;
             this.scrollAttempts = 0;
+            this.autoScrollStopReason = null;
+            this.autoScrollStoppedAt = null;
 
             // Show scroll indicator
             this.showScrollIndicator();
@@ -485,7 +501,7 @@ if (window.pinVaultContentLoaded) {
                         if (newScrollHeight === this.lastScrollHeight) {
                             this.scrollAttempts++;
                             if (this.scrollAttempts >= this.maxScrollAttempts) {
-                                this.stopAutoScroll();
+                                this.stopAutoScroll('exhausted');
                                 return;
                             }
                         } else {
@@ -504,8 +520,10 @@ if (window.pinVaultContentLoaded) {
             }, 2500);
         }
 
-        stopAutoScroll() {
+        stopAutoScroll(reason: 'manual' | 'exhausted' = 'manual') {
             this.isAutoScrolling = false;
+            this.autoScrollStopReason = reason;
+            this.autoScrollStoppedAt = Date.now();
             if (this.scrollInterval) {
                 clearInterval(this.scrollInterval);
                 this.scrollInterval = null;
