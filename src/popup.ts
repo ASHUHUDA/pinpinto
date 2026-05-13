@@ -520,6 +520,20 @@ class PinVaultProPopup {
         chrome.tabs.create({ url: 'https://www.pinterest.com' });
     }
 
+    shouldOpenSidebarTabFallback() {
+        return /firefox/i.test(navigator.userAgent);
+    }
+
+    getSidePanelUnavailableMessage() {
+        return this.language === 'zh'
+            ? '当前加载的不是支持桌面侧边栏的 Chrome / Edge 构建。请重新执行 `corepack.cmd pnpm build`，然后重新加载 dist 目录。'
+            : 'This build does not expose the desktop side panel. Run `corepack.cmd pnpm build`, then reload the dist folder in Chrome or Edge.';
+    }
+
+    openSidebarFallbackTab() {
+        chrome.tabs.create({ url: chrome.runtime.getURL('sidebar.html') });
+    }
+
     async openSidebar() {
         try {
             if (chrome.sidePanel) {
@@ -527,12 +541,18 @@ class PinVaultProPopup {
                     .then((targetTab) => this.rememberSidebarTargetTab(targetTab?.id ?? null))
                     .catch(() => {});
                 await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT } as any);
+            } else if (this.shouldOpenSidebarTabFallback()) {
+                this.openSidebarFallbackTab();
             } else {
-                chrome.tabs.create({ url: chrome.runtime.getURL('sidebar.html') });
+                alert(this.getSidePanelUnavailableMessage());
             }
         } catch (error) {
             console.error('Error opening sidebar:', error);
-            chrome.tabs.create({ url: chrome.runtime.getURL('sidebar.html') });
+            if (this.shouldOpenSidebarTabFallback()) {
+                this.openSidebarFallbackTab();
+                return;
+            }
+            alert(this.getSidePanelUnavailableMessage());
         }
     }
 

@@ -20,6 +20,8 @@ corepack.cmd pnpm install
 ```bash
 corepack.cmd pnpm build
 ```
+   - This produces the desktop **Chrome / Edge** build in `dist`
+   - The sidebar entry uses the real `side_panel` container instead of a tab fallback
 3. Load unpacked extension
 - Open `chrome://extensions` or `edge://extensions`
 - Enable Developer Mode
@@ -36,7 +38,15 @@ corepack.cmd pnpm run verify
 
 # build only
 corepack.cmd pnpm build
+
+# build Chrome + Firefox release artifacts
+corepack.cmd pnpm run build:browsers
 ```
+
+`build:browsers` will:
+- output the Chrome package to `artifacts/pinpinto-chrome-v*.zip`
+- output the Firefox package to `artifacts/pinpinto-firefox-v*.xpi`
+- and **keep `dist` as the Chrome build**, so Chrome / Edge do not accidentally load a Firefox manifest
 
 ## Project Structure
 - `src/background.ts`: download orchestration

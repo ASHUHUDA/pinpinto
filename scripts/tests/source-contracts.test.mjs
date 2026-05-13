@@ -18,6 +18,20 @@ test('popup side panel opener keeps direct window-level open path', async () => 
     popupSource,
     /getActivePinterestTab\(\)\s*\n\s*\.then\(\(targetTab\) => this\.rememberSidebarTargetTab\(targetTab\?\.id \?\? null\)\)/
   );
+  assert.match(
+    popupSource,
+    /else if \(this\.shouldOpenSidebarTabFallback\(\)\) \{[\s\S]*?this\.openSidebarFallbackTab\(\);[\s\S]*?\} else \{[\s\S]*?alert\(this\.getSidePanelUnavailableMessage\(\)\);/
+  );
+});
+
+test('multi-browser build keeps dist reserved for Chrome while staging Firefox elsewhere', async () => {
+  const buildBrowsersSource = await readWorkspaceFile('scripts/build-browsers.mjs');
+
+  assert.match(buildBrowsersSource, /const CHROME_DIST_DIR = path\.join\(projectRoot, 'dist'\);/);
+  assert.match(buildBrowsersSource, /const FIREFOX_STAGING_DIR = path\.join\(projectRoot, '\.build-firefox-dist'\);/);
+  assert.match(buildBrowsersSource, /await buildTarget\('chrome', 'zip', CHROME_DIST_DIR\);/);
+  assert.match(buildBrowsersSource, /await buildTarget\('firefox', 'xpi', FIREFOX_STAGING_DIR\);/);
+  assert.match(buildBrowsersSource, /await fs\.rm\(FIREFOX_STAGING_DIR, \{ recursive: true, force: true \}\);/);
 });
 
 test('cancel flows target current batch instead of indiscriminately canceling all downloads', async () => {

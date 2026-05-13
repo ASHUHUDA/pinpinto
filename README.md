@@ -20,6 +20,8 @@ corepack.cmd pnpm install
 ```bash
 corepack.cmd pnpm build
 ```
+   - 这会生成 **Chrome / Edge 桌面版**可直接加载的 `dist`
+   - 侧边栏会走真正的 `side_panel`，不是新标签页降级页
 3. 加载扩展
 - 打开 `chrome://extensions` 或 `edge://extensions`
 - 开启“开发者模式”
@@ -36,7 +38,15 @@ corepack.cmd pnpm run verify
 
 # 仅构建
 corepack.cmd pnpm build
+
+# 同时生成 Chrome + Firefox 发布包
+corepack.cmd pnpm run build:browsers
 ```
+
+`build:browsers` 会把：
+- Chrome 包输出到 `artifacts/pinpinto-chrome-v*.zip`
+- Firefox 包输出到 `artifacts/pinpinto-firefox-v*.xpi`
+- 并且**保持 `dist` 仍然是 Chrome 构建结果**，避免把 Firefox manifest 误加载到 Chrome / Edge 里
 
 ## 仓库结构
 - `src/background.ts`: 下载与任务编排
