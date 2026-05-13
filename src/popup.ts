@@ -1,8 +1,24 @@
 import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
-import { AUTO_BATCH_DOWNLOAD_LIMIT, getAutoBatchPlan, sliceBatchWindowFromIndex } from './shared/download-batching';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
+import {
+    cancelDownload as cancelPopupDownload,
+    clearAllImagesOnPage,
+    deselectAllImages as deselectPopupImages,
+    discardImagesBeforeIndex,
+    fallbackUpdateStats as fallbackPopupUpdateStats,
+    getAutoScrollStatus as getPopupAutoScrollStatus,
+    getSettings as getPopupSettings,
+    getViewportAnchorIndex,
+    hideProgress as hidePopupProgress,
+    selectAllImages as selectAllPopupImages,
+    showProgress as showPopupProgress,
+    startDownload as startPopupDownload,
+    toggleAutoScroll as togglePopupAutoScroll,
+    updateImageCounts as updatePopupImageCounts,
+    updateProgress as updatePopupProgress
+} from './popup/download-actions';
 
 type PopupSettings = {
     language: SupportedLanguage;
@@ -352,69 +368,13 @@ class PinVaultProPopup {
         return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
-    async getAutoScrollStatus(tabId: number) {
-        try {
-            return await chrome.tabs.sendMessage(tabId, { action: 'getAutoScrollStatus' });
-        } catch { return null; }
-    }
+    async getAutoScrollStatus(tabId: number) { return getPopupAutoScrollStatus(this, tabId); }
+    async getViewportAnchorIndex(tabId: number) { return getViewportAnchorIndex(this, tabId); }
+    async discardImagesBeforeIndex(tabId: number, startIndex: number) { return discardImagesBeforeIndex(this, tabId, startIndex); }
+    async clearAllImagesOnPage(tabId: number) { return clearAllImagesOnPage(this, tabId); }
 
-    async updateImageCounts() {
-        try {
-            const tab = await this.getActivePinterestTab();
-            if (!tab?.id || !tab.url) {
-                this.updateStatsDisplay(0, 0);
-                return;
-            }
-
-            await this.rememberSidebarTargetTab(tab.id);
-            await this.ensureContentScriptInjected(tab.id);
-
-            const response = await chrome.tabs.sendMessage(tab.id, { action: 'getImageCounts' });
-            if (response && response.total !== undefined) {
-                this.updateStatsDisplay(response.total, response.selected?.length || 0);
-                return;
-            }
-
-            await this.fallbackUpdateStats(tab.id);
-        } catch (error) {
-            console.error('Error updating image counts:', error);
-            try {
-                const tab = await this.getActivePinterestTab();
-                if (tab?.id) {
-                    await this.fallbackUpdateStats(tab.id);
-                }
-            } catch (fallbackError) {
-                console.error('Fallback stats update failed:', fallbackError);
-            }
-        }
-    }
-
-    async fallbackUpdateStats(tabId: number) {
-        const results = await chrome.scripting.executeScript({
-            target: { tabId },
-            func: () => {
-                if (window.pinVaultContent) {
-                    window.pinVaultContent.scanForImages();
-                    return {
-                        total: window.pinVaultContent.imageElements.size,
-                        selected: window.pinVaultContent.selectedImages.size
-                    };
-                }
-
-                const images = document.querySelectorAll('img[src*="pinimg.com"], img[data-src*="pinimg.com"]');
-                const selected = document.querySelectorAll('img[data-pinvault-selected="true"]');
-
-                return {
-                    total: images.length,
-                    selected: selected.length
-                };
-            }
-        });
-
-        if (results?.[0]) {
-            this.updateStatsDisplay(results[0].result.total, results[0].result.selected);
-        }
-    }
+    async updateImageCounts() { return updatePopupImageCounts(this); }
+    async fallbackUpdateStats(tabId: number) { return fallbackPopupUpdateStats(this, tabId); }
 
     updateStatsDisplay(total: number, selected: number) {
         this.totalImages = total;
@@ -430,122 +390,9 @@ class PinVaultProPopup {
         if (downloadBtn) downloadBtn.disabled = selected === 0;
     }
 
-    async selectAllImages() {
-        try {
-            const tab = await this.getActivePinterestTab();
-            if (!tab?.id) return;
-
-            await this.ensureContentScriptInjected(tab.id);
-            await chrome.tabs.sendMessage(tab.id, { action: 'selectAllImages' });
-            await this.updateImageCounts();
-        } catch (error) {
-            console.error('Error selecting all images:', error);
-        }
-    }
-
-    async deselectAllImages() {
-        try {
-            const tab = await this.getActivePinterestTab();
-            if (!tab?.id) return;
-
-            await this.ensureContentScriptInjected(tab.id);
-            await chrome.tabs.sendMessage(tab.id, { action: 'deselectAllImages' });
-            await this.updateImageCounts();
-        } catch (error) {
-            console.error('Error deselecting images:', error);
-        }
-    }
-
-    async toggleAutoScroll(enabled: boolean, options: { resetBatchState?: boolean } = {}) {
-        const shouldResetBatchState = options.resetBatchState !== false;
-        try {
-            const tab = await this.getActivePinterestTab();
-            if (!tab?.id) return;
-
-            await this.ensureContentScriptInjected(tab.id);
-
-            if (enabled) {
-                await chrome.tabs.sendMessage(tab.id, { action: 'startAutoScroll' });
-                this.isAutoScrolling = true;
-
-                if (this.autoScrollStatsTimer) {
-                    clearInterval(this.autoScrollStatsTimer);
-                }
-
-                if (shouldResetBatchState) {
-                    this.batchCount = 0;
-                    this.nextBatchStartIndex = 0;
-                    this.activeAutoBatchSize = 0;
-                }
-                this.isBatchingNow = false;
-
-                this.autoScrollStatsTimer = window.setInterval(async () => {
-                    if (this.isBatchingNow) return;
-
-                    const targetTab = await this.getActivePinterestTab();
-                    if (!targetTab?.id) {
-                        return;
-                    }
-
-                    await this.ensureContentScriptInjected(targetTab.id);
-                    await this.updateImageCounts();
-
-                    const settings = await this.getSettings();
-                    if (settings.autoBatchDownload !== true) {
-                        return;
-                    }
-
-                    const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
-                    const autoScrollStatus = await this.getAutoScrollStatus(targetTab.id);
-                    const batchPlan = getAutoBatchPlan(total, this.nextBatchStartIndex, settings.autoBatchDownload === true, {
-                        autoScrollExhausted: autoScrollStatus?.stopReason === 'exhausted'
-                    });
-                    if (!batchPlan.shouldStart) {
-                        return;
-                    }
-
-                    this.isBatchingNow = true;
-
-                    try {
-                        await this.ensureContentScriptInjected(targetTab.id);
-                        await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
-                        await chrome.tabs.sendMessage(targetTab.id, { action: 'selectAllImages' });
-                        setTimeout(async () => {
-                            const started = await this.startDownload({
-                                autoBatchMode: true,
-                                batchStartIndex: batchPlan.startIndex,
-                                batchEndIndex: batchPlan.endIndex
-                            });
-                            if (!started) {
-                                this.isBatchingNow = false;
-                                this.activeAutoBatchSize = 0;
-                            }
-                        }, 500);
-                    } catch (error) {
-                        console.error('Error during auto-batch:', error);
-                        this.isBatchingNow = false;
-                    }
-                }, 1000);
-            } else {
-                await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
-                this.isAutoScrolling = false;
-
-                if (this.autoScrollStatsTimer) {
-                    clearInterval(this.autoScrollStatsTimer);
-                    this.autoScrollStatsTimer = null;
-                }
-
-                this.isBatchingNow = false;
-                this.activeAutoBatchSize = 0;
-                setTimeout(() => this.updateImageCounts(), 500);
-            }
-
-            this.setAutoScrollUi(enabled);
-            await this.saveSetting('autoScroll', enabled);
-        } catch (error) {
-            console.error('Error toggling auto scroll:', error);
-        }
-    }
+    async selectAllImages() { return selectAllPopupImages(this); }
+    async deselectAllImages() { return deselectPopupImages(this); }
+    async toggleAutoScroll(enabled: boolean, options: { resetBatchState?: boolean } = {}) { return togglePopupAutoScroll(this, enabled, options); }
 
     stopAutoScroll() {
         this.toggleAutoScroll(false);
@@ -564,215 +411,12 @@ class PinVaultProPopup {
         }
     }
 
-    async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}): Promise<boolean> {
-        const autoBatchMode = options.autoBatchMode === true;
-
-        try {
-            const tab = await this.getActivePinterestTab();
-            if (!tab?.id) {
-                if (!autoBatchMode) {
-                    alert(this.language === 'zh' ? '请先打开 Pinterest。' : 'Please open Pinterest first.');
-                }
-                return false;
-            }
-
-            await this.updateImageCounts();
-            const settings = await this.getSettings();
-
-            if (autoBatchMode) {
-                try {
-                    await this.ensureContentScriptInjected(tab.id);
-                    await chrome.tabs.sendMessage(tab.id, { action: 'selectAllImages' });
-                    await new Promise((resolve) => setTimeout(resolve, 250));
-                } catch {
-                    // ignore and continue with fallbacks
-                }
-            }
-
-            let selectedImages: any[] = [];
-            try {
-                await this.ensureContentScriptInjected(tab.id);
-                const response = await chrome.tabs.sendMessage(tab.id, {
-                    action: 'getSelectedImages',
-                    settings
-                });
-                if (response?.images?.length) {
-                    selectedImages = response.images;
-                }
-            } catch {
-                // ignore and use fallback
-            }
-
-            if (selectedImages.length === 0) {
-                const results = await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: () => {
-                        const selected = document.querySelectorAll('img[data-pinvault-selected="true"]');
-                        const imageData: Array<{ id: string; url: string; title: string; board: string; domain: string; originalFilename: string | undefined }> = [];
-
-                        selected.forEach((img, index) => {
-                            const image = img as HTMLImageElement;
-                            if (image.src && image.src.includes('pinimg.com')) {
-                                imageData.push({
-                                    id: `img_${Date.now()}_${index}`,
-                                    url: image.src,
-                                    title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
-                                    board: document.title || 'Pinterest',
-                                    domain: window.location.hostname,
-                                    originalFilename: image.src.split('/').pop()
-                                });
-                            }
-                        });
-
-                        return imageData;
-                    }
-                });
-
-                if (results?.[0]?.result?.length) {
-                    selectedImages = results[0].result;
-                }
-            }
-
-            if (selectedImages.length === 0 && autoBatchMode) {
-                const results = await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: () => {
-                        const allImages = document.querySelectorAll('img[src*="pinimg.com"], img[data-src*="pinimg.com"]');
-                        const imageData: Array<{ id: string; url: string; title: string; board: string; domain: string; originalFilename: string | undefined }> = [];
-
-                        allImages.forEach((img, index) => {
-                            const image = img as HTMLImageElement;
-                            const src = image.src || image.getAttribute('data-src') || '';
-                            if (!src || !src.includes('pinimg.com')) return;
-
-                            imageData.push({
-                                id: `img_${Date.now()}_${index}`,
-                                url: src,
-                                title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
-                                board: document.title || 'Pinterest',
-                                domain: window.location.hostname,
-                                originalFilename: src.split('/').pop()
-                            });
-                        });
-
-                        return imageData;
-                    }
-                });
-
-                if (results?.[0]?.result?.length) {
-                    selectedImages = results[0].result;
-                }
-            }
-
-            if (selectedImages.length === 0) {
-                if (!autoBatchMode) {
-                    alert(this.language === 'zh' ? '请先选图。' : 'Please select images first.');
-                }
-                return false;
-            }
-
-            if (autoBatchMode && settings.autoBatchDownload === true && selectedImages.length > 0) {
-                // 自动批量按已消费游标取图；滚动耗尽时允许最后一段不足 100 张，不重复已下载图片。
-                const batchStartIndex = typeof options.batchStartIndex === 'number'
-                    ? options.batchStartIndex
-                    : this.nextBatchStartIndex;
-                const batchEndIndex = typeof options.batchEndIndex === 'number'
-                    ? options.batchEndIndex
-                    : batchStartIndex + AUTO_BATCH_DOWNLOAD_LIMIT;
-                selectedImages = sliceBatchWindowFromIndex(selectedImages, batchStartIndex, batchEndIndex);
-                if (selectedImages.length === 0) {
-                    this.activeAutoBatchSize = 0;
-                    return false;
-                }
-                this.activeAutoBatchSize = selectedImages.length;
-            }
-
-            this.showProgress();
-
-            chrome.runtime.sendMessage(
-                {
-                    action: 'downloadImages',
-                    images: selectedImages,
-                    settings
-                },
-                (response) => {
-                    if (chrome.runtime.lastError) {
-                        const errorText = `${this.language === 'zh' ? '启动下载失败：' : 'Failed to start download: '}${chrome.runtime.lastError.message}`;
-                        this.updateProgress(100, errorText);
-                        if (!autoBatchMode) {
-                            alert(errorText);
-                            this.hideProgress();
-                        } else {
-                            this.isBatchingNow = false;
-                            this.activeAutoBatchSize = 0;
-                        }
-                        return;
-                    }
-
-                    if (!response?.success) {
-                        const errorText = `${this.language === 'zh' ? '下载失败：' : 'Download failed: '}${response?.error || 'Unknown error'}`;
-                        this.updateProgress(100, errorText);
-                        if (!autoBatchMode) {
-                            alert(errorText);
-                            this.hideProgress();
-                        } else {
-                            this.isBatchingNow = false;
-                            this.activeAutoBatchSize = 0;
-                        }
-                    }
-                }
-            );
-            return true;
-        } catch (error) {
-            console.error('Error starting download:', error);
-            const errorText = `${this.language === 'zh' ? '下载失败：' : 'Download failed: '}${error instanceof Error ? error.message : String(error)}`;
-            this.updateProgress(100, errorText);
-            if (!autoBatchMode) {
-                alert(errorText);
-                this.hideProgress();
-            } else {
-                this.isBatchingNow = false;
-                this.activeAutoBatchSize = 0;
-            }
-            return false;
-        }
-    }
-
-    cancelDownload() {
-        chrome.runtime.sendMessage({ action: 'cancelDownload' });
-        this.hideProgress();
-    }
-
-    showProgress() {
-        const progressSection = document.getElementById('progressSection');
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
-        const progressDetails = document.getElementById('progressDetails');
-
-        if (progressSection) progressSection.style.display = 'block';
-        if (progressFill) (progressFill as HTMLElement).style.width = '0%';
-        if (progressText) progressText.textContent = '0%';
-        if (progressDetails) progressDetails.textContent = this.language === 'zh' ? '准备下载...' : 'Preparing download...';
-    }
-
-    hideProgress() {
-        const progressSection = document.getElementById('progressSection');
-        if (progressSection) progressSection.style.display = 'none';
-    }
-
-    updateProgress(progress: number, details: string) {
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
-        const progressDetails = document.getElementById('progressDetails');
-
-        if (progressFill) (progressFill as HTMLElement).style.width = `${progress}%`;
-        if (progressText) progressText.textContent = `${Math.round(progress)}%`;
-        if (progressDetails) progressDetails.textContent = details;
-    }
-
-    async getSettings() {
-        return chrome.storage.sync.get(SHARED_DOWNLOAD_SETTINGS_DEFAULTS);
-    }
+    async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}) { return startPopupDownload(this, options); }
+    cancelDownload() { return cancelPopupDownload(this); }
+    showProgress() { return showPopupProgress(this); }
+    hideProgress() { return hidePopupProgress(this); }
+    updateProgress(progress: number, details: string) { return updatePopupProgress(this, progress, details); }
+    async getSettings() { return getPopupSettings(); }
 
     async changeTheme(theme: string) {
         this.applyTheme(theme);
@@ -878,15 +522,11 @@ class PinVaultProPopup {
 
     async openSidebar() {
         try {
-            const targetTab = await this.getActivePinterestTab();
-            await this.rememberSidebarTargetTab(targetTab?.id ?? null);
-
             if (chrome.sidePanel) {
-                if (targetTab?.id) {
-                    await chrome.sidePanel.open({ tabId: targetTab.id } as any);
-                } else {
-                    await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT } as any);
-                }
+                void this.getActivePinterestTab()
+                    .then((targetTab) => this.rememberSidebarTargetTab(targetTab?.id ?? null))
+                    .catch(() => {});
+                await chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT } as any);
             } else {
                 chrome.tabs.create({ url: chrome.runtime.getURL('sidebar.html') });
             }
@@ -995,5 +635,15 @@ chrome.runtime.onMessage.addListener((message) => {
         popupInstance.isBatchingNow = false;
         popupInstance.activeAutoBatchSize = 0;
         alert(`${prefix}${message.error}`);
+    } else if (message.action === 'downloadCancelled') {
+        popupInstance.hideProgress();
+        popupInstance.isBatchingNow = false;
+        popupInstance.activeAutoBatchSize = 0;
+        popupInstance.isAutoScrolling = false;
+        popupInstance.setAutoScrollUi(false);
+        if (popupInstance.autoScrollStatsTimer) {
+            clearInterval(popupInstance.autoScrollStatsTimer);
+            popupInstance.autoScrollStatsTimer = null;
+        }
     }
 });

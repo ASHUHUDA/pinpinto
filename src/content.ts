@@ -2,6 +2,7 @@
 console.log('PinPinto content script: Starting to load...');
 
 import { createOverlayControls as createImageOverlayControls } from './content/overlay-controls';
+import { ContentSessionStore } from './content/session-store';
 import { PINPINTO_CONTENT_STYLE_ID, PINPINTO_CONTENT_STYLE_TEXT } from './content/styles';
 
 export { };
@@ -14,8 +15,7 @@ if (window.pinVaultContentLoaded) {
     console.log('PinPinto content script loading for first time...');
 
     class PinVaultContent {
-        selectedImages: Set<string>;
-        imageElements: Map<string, any>;
+        session: ContentSessionStore;
         isAutoScrolling: boolean;
         scrollInterval: number | null;
         scanInterval: number | null;
@@ -29,8 +29,7 @@ if (window.pinVaultContentLoaded) {
         contextMenuImage?: HTMLImageElement | null;
 
         constructor() {
-            this.selectedImages = new Set();
-            this.imageElements = new Map();
+            this.session = new ContentSessionStore();
             this.isAutoScrolling = false;
             this.scrollInterval = null;
             this.scanInterval = null;
@@ -83,10 +82,10 @@ if (window.pinVaultContentLoaded) {
                         case 'getImageCounts':
                             // Rescan before returning counts to ensure we have latest data
                             this.scanForImages();
-                            const selectedIds = Array.from(this.selectedImages);
-                            console.log(`Content script image counts: ${this.imageElements.size} total, ${selectedIds.length} selected`);
+                            const selectedIds = Array.from(this.session.selectedImages);
+                            console.log(`Content script image counts: ${this.session.imageElements.size} total, ${selectedIds.length} selected`);
                             sendResponse({
-                                total: this.imageElements.size,
+                                total: this.session.imageElements.size,
                                 selected: selectedIds
                             });
                             break;
@@ -127,6 +126,30 @@ if (window.pinVaultContentLoaded) {
                             sendResponse({ images });
                             break;
 
+                        case 'getImagesInRange':
+                            sendResponse({
+                                images: this.getImagesInRange(request.startIndex, request.endIndex)
+                            });
+                            break;
+
+                        case 'getViewportAnchor':
+                            sendResponse({
+                                anchorIndex: this.getViewportAnchorIndex()
+                            });
+                            break;
+
+                        case 'discardImagesBeforeIndex':
+                            sendResponse({
+                                success: true,
+                                ...this.discardImagesBeforeIndex(request.startIndex)
+                            });
+                            break;
+
+                        case 'clearAllImages':
+                            this.clearAllImages();
+                            sendResponse({ success: true });
+                            break;
+
                         case 'markImageStatus':
                             this.markImageStatus(request.imageId, request.status, request.error);
                             sendResponse({ success: true });
@@ -146,7 +169,7 @@ if (window.pinVaultContentLoaded) {
 
         scanForImages() {
             console.log('PinPinto: Scanning for images...');
-            const beforeCount = this.imageElements.size;
+            const beforeCount = this.session.imageElements.size;
 
             // Pinterest uses various selectors for images
             const selectors = [
@@ -180,7 +203,7 @@ if (window.pinVaultContentLoaded) {
                 }
             });
 
-            const afterCount = this.imageElements.size;
+            const afterCount = this.session.imageElements.size;
             const newImages = afterCount - beforeCount;
 
             if (newImages > 0) {
@@ -199,10 +222,16 @@ if (window.pinVaultContentLoaded) {
                 return;
             }
 
+            const sourceKey = this.getImageSourceKey(img);
+            if (this.session.isIgnoredSource(sourceKey)) {
+                img.dataset.pinvaultProcessed = 'ignored';
+                return;
+            }
+
             img.dataset.pinvaultProcessed = 'true';
 
             // Generate unique ID for the image
-            const imageId = this.generateImageId(img);
+            const imageId = this.session.createImageId(img);
 
             // Find the container element
             const container = this.findImageContainer(img);
@@ -221,15 +250,18 @@ if (window.pinVaultContentLoaded) {
             overlayHost.appendChild(controls);
 
             // Store image data
-            this.imageElements.set(imageId, {
+            this.session.addImage({
+                id: imageId,
                 element: img,
                 container: overlayHost,
+                controls,
                 overlay: selectOverlay,
                 url: this.getHighQualityUrl(img),
                 title: this.extractImageTitle(container),
                 board: this.extractBoardName(),
                 domain: window.location.hostname,
-                originalFilename: this.extractOriginalFilename(img)
+                originalFilename: this.extractOriginalFilename(img),
+                sourceKey
             });
         }
 
@@ -252,11 +284,8 @@ if (window.pinVaultContentLoaded) {
             return true;
         }
 
-        generateImageId(img) {
-            const src = img.src || img.dataset.src || '';
-            const urlParts = src.split('/');
-            const filename = urlParts[urlParts.length - 1];
-            return filename.split('.')[0] || `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        getImageSourceKey(img: HTMLImageElement) {
+            return this.getHighQualityUrl(img);
         }
 
         findImageContainer(img: HTMLElement) {
@@ -311,7 +340,7 @@ if (window.pinVaultContentLoaded) {
         }
 
         async downloadSingleImage(imageId, singleDownloadBtn) {
-            const imageData = this.imageElements.get(imageId);
+            const imageData = this.session.imageElements.get(imageId);
             if (!imageData) {
                 return;
             }
@@ -416,52 +445,24 @@ if (window.pinVaultContentLoaded) {
         }
 
         toggleImageSelection(imageId) {
-            const imageData = this.imageElements.get(imageId);
-            if (!imageData) return;
-
-            const overlay = imageData.overlay;
-            const checkbox = overlay.querySelector('.pinvault-checkbox');
-
-            if (this.selectedImages.has(imageId)) {
-                // Deselect
-                this.selectedImages.delete(imageId);
-                overlay.classList.remove('selected');
-                imageData.container.classList.remove('pinvault-selected');
-                imageData.element.setAttribute('data-pinvault-selected', 'false');
-                checkbox.textContent = '[ ]';
-            } else {
-                // Select
-                this.selectedImages.add(imageId);
-                overlay.classList.add('selected');
-                imageData.container.classList.add('pinvault-selected');
-                imageData.element.setAttribute('data-pinvault-selected', 'true');
-                checkbox.textContent = '[x]';
-            }
+            this.session.toggleImageSelection(imageId);
         }
 
         selectAllImages() {
-            this.imageElements.forEach((imageData, imageId) => {
-                if (!this.selectedImages.has(imageId)) {
-                    this.selectedImages.add(imageId);
-                    imageData.overlay.classList.add('selected');
-                    imageData.container.classList.add('pinvault-selected');
-                    imageData.element.setAttribute('data-pinvault-selected', 'true');
-                    imageData.overlay.querySelector('.pinvault-checkbox').textContent = '[x]';
-                }
-            });
+            this.session.selectAllImages();
         }
 
         deselectAllImages() {
-            this.selectedImages.forEach(imageId => {
-                const imageData = this.imageElements.get(imageId);
-                if (imageData) {
-                    imageData.overlay.classList.remove('selected', 'success', 'error');
-                    imageData.container.classList.remove('pinvault-selected');
-                    imageData.element.setAttribute('data-pinvault-selected', 'false');
-                    imageData.overlay.querySelector('.pinvault-checkbox').textContent = '[ ]';
-                }
-            });
-            this.selectedImages.clear();
+            this.session.deselectAllImages();
+        }
+
+        clearAllImages() {
+            this.stopAutoScroll('manual');
+            this.session.clearAllImages();
+
+            window.dispatchEvent(new CustomEvent('pinvaultImagesUpdated', {
+                detail: { total: 0, new: 0 }
+            }));
         }
 
         startAutoScroll() {
@@ -602,52 +603,28 @@ if (window.pinVaultContentLoaded) {
         }
 
         getSelectedImagesData(settings) {
-            const selectedData = [];
-
-            console.log(`Getting selected images data: ${this.selectedImages.size} selected images`);
-
-            this.selectedImages.forEach(imageId => {
-                const imageData = this.imageElements.get(imageId);
-                if (imageData) {
-                    selectedData.push({
-                        id: imageId,
-                        url: imageData.url,
-                        title: imageData.title,
-                        board: imageData.board,
-                        domain: imageData.domain,
-                        originalFilename: imageData.originalFilename
-                    });
-                } else {
-                    console.warn(`No image data found for selected image ID: ${imageId}`);
-                }
-            });
-
+            const selectedData = this.session.getSelectedImagesData();
+            console.log(`Getting selected images data: ${this.session.selectedImages.size} selected images`);
             console.log(`Returning ${selectedData.length} image data objects`);
             return selectedData;
         }
 
+        getImagesInRange(startIndex = 0, endIndex = this.session.imageOrder.length) {
+            this.scanForImages();
+            return this.session.getImagesInRange(startIndex, endIndex);
+        }
+
+        getViewportAnchorIndex() {
+            this.scanForImages();
+            return this.session.getViewportAnchorIndex();
+        }
+
+        discardImagesBeforeIndex(startIndex = 0) {
+            return this.session.discardImagesBeforeIndex(startIndex);
+        }
+
         markImageStatus(imageId, status, error = null) {
-            const imageData = this.imageElements.get(imageId);
-            if (!imageData) return;
-
-            const overlay = imageData.overlay;
-            const checkbox = overlay.querySelector('.pinvault-checkbox');
-
-            // Remove previous status classes
-            overlay.classList.remove('success', 'error');
-
-            switch (status) {
-                case 'success':
-                    overlay.classList.add('success');
-                    checkbox.textContent = 'OK';
-                    overlay.title = 'Downloaded successfully';
-                    break;
-                case 'error':
-                    overlay.classList.add('error');
-                    checkbox.textContent = 'ERR';
-                    overlay.title = `Download failed: ${error || 'Unknown error'}`;
-                    break;
-            }
+            this.session.markImageStatus(imageId, status, error);
         }
     }
 

@@ -1,6 +1,18 @@
 // Background script for PinPinto Extension
-import JSZip from 'jszip';
 import { PINTEREST_MATCH_PATTERNS, isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
+import {
+    cancelBatchJobState,
+    createBatchJobState,
+    isBatchCancellationError,
+    isBatchJobCancelled,
+    markBatchJobNotified,
+    PINPINTO_BATCH_CANCELLED,
+    shouldSkipBatchOutcome,
+    throwIfBatchJobCancelled,
+    type BatchJobState
+} from './background/batch-job';
+import { buildSingleDownloadPath, buildZipDownloadPath } from './background/download-path';
+import { runBatchDownload } from './background/batch-download';
 import {
     getDownloadCandidateUrls as getDownloadCandidateUrlsHelper,
     getHighQualityUrl as getHighQualityUrlHelper,
@@ -20,20 +32,21 @@ import {
     generateFolderPath as generateFolderPathHelper
 } from './background/folder-path';
 
-const IMAGE_FETCH_MAX_RETRIES = 3;
-const IMAGE_FETCH_TIMEOUT_MS = 15000;
-
 class PinVaultProBackground {
     activeDownloads: Map<number, any>;
     downloadQueue: any[];
     isProcessingQueue: boolean;
     maxConcurrentDownloads: number;
+    currentBatchJob: (BatchJobState & { controllers: Set<AbortController> }) | null;
+    nextBatchJobId: number;
 
     constructor() {
         this.activeDownloads = new Map();
         this.downloadQueue = [];
         this.isProcessingQueue = false;
         this.maxConcurrentDownloads = 3;
+        this.currentBatchJob = null;
+        this.nextBatchJobId = 1;
 
         this.init();
     }
@@ -164,8 +177,15 @@ class PinVaultProBackground {
                     if (typeof request.downloadId === 'number') {
                         await this.cancelDownload(request.downloadId);
                     } else {
-                        await this.cancelAllDownloads();
+                        // Preserve single-image downloads when legacy callers request a generic cancel.
+                        // Batch-stop UI should only terminate the active ZIP job, not unrelated downloads.
+                        await this.cancelCurrentBatch();
                     }
+                    sendResponse({ success: true });
+                    break;
+
+                case 'cancelCurrentBatch':
+                    await this.cancelCurrentBatch();
                     sendResponse({ success: true });
                     break;
 
@@ -275,11 +295,11 @@ class PinVaultProBackground {
                 imageData.url,
                 imageData.originalFilename
             );
-            const folderPath = this.generateFolderPath(imageData, settings);
+            const requestedFilename = buildSingleDownloadPath(filename);
 
             const downloadOptions: chrome.downloads.DownloadOptions = {
                 url: imageData.url,
-                filename: `${folderPath}/${filename}`,
+                filename: requestedFilename,
                 conflictAction: 'uniquify'
             };
 
@@ -289,12 +309,12 @@ class PinVaultProBackground {
             console.log('Download started with ID:', downloadId);
 
             // Track download
-            const requestedFilename = `${folderPath}/${filename}`;
             this.activeDownloads.set(downloadId, {
                 imageData,
                 settings,
                 startTime: Date.now(),
                 status: 'downloading',
+                isBatch: false,
                 requestedFilename
             });
 
@@ -308,191 +328,12 @@ class PinVaultProBackground {
     }
 
     async downloadMultipleImages(images, settings) {
-        const imageList = Array.isArray(images) ? images : [];
-        if (imageList.length === 0) {
-            this.sendProgressUpdate(100, '未接收到可下载图片。');
-            setTimeout(() => {
-                this.sendMessageToAllExtensionPages({ action: 'downloadComplete', results: [] });
-            }, 500);
-            return [];
-        }
-
-        const uniqueImages = [];
-        const currentBatchUrls = new Set<string>();
-        let duplicateCount = 0;
-
-        for (const image of imageList) {
-            const imageUrl = this.normalizeImageUrlForDeduplication(image, settings);
-            if (!imageUrl) continue;
-
-            // Only dedupe within the current user action.
-            // Cross-run dedupe causes "no reaction" after a failed batch.
-            if (!currentBatchUrls.has(imageUrl)) {
-                currentBatchUrls.add(imageUrl);
-                uniqueImages.push(image);
-            } else {
-                duplicateCount++;
-            }
-        }
-
-        console.log(`Deduplication: Filtered out ${duplicateCount} duplicate images.`);
-        images = uniqueImages;
-        const totalImages = images.length;
-
-        if (totalImages === 0) {
-            this.sendProgressUpdate(100, '没有检测到新的图片，已全部去重。');
-            setTimeout(() => {
-                this.sendMessageToAllExtensionPages({ action: 'downloadComplete', results: [] });
-            }, 1000);
-            return [];
-        }
-
-        const results = [];
-        let completedImages = 0;
-        let successfulImages = 0;
-        let failedImages = 0;
-
-        const batchTimestamp = this.formatLocalTimestamp();
-        const zipName = `PinPinto_${batchTimestamp}.zip`;
-
-        console.log(`Starting download of ${totalImages} images as ZIP: ${zipName}`);
-        this.sendProgressUpdate(0, `开始打包 ${totalImages} 张图片，请稍候...`);
-
-        const parsedBatchSize = Number(settings?.maxConcurrentDownloads);
-        const batchSize = Number.isFinite(parsedBatchSize) && parsedBatchSize > 0
-            ? Math.floor(parsedBatchSize)
-            : this.maxConcurrentDownloads;
-        const zip = new JSZip();
-
-        for (let i = 0; i < images.length; i += batchSize) {
-            const batch = images.slice(i, i + batchSize);
-            const batchPromises = batch.map(async (image, batchIndex) => {
-                try {
-                    const sourceUrl = typeof image === 'string' ? image : image.url;
-                    const candidateUrls = this.getDownloadCandidateUrls(sourceUrl, settings.highQuality !== false);
-                    if (candidateUrls.length === 0) {
-                        throw new Error('图片 URL 无效');
-                    }
-
-                    const { arrayBuffer, resolvedUrl } = await this.fetchImageArrayBuffer(
-                        candidateUrls,
-                        IMAGE_FETCH_MAX_RETRIES
-                    );
-
-                    const imageData = {
-                        url: resolvedUrl,
-                        title: typeof image === 'string' ? `Image_${i + batchIndex + 1}` : (image.title || `Image_${i + batchIndex + 1}`),
-                        board: typeof image === 'string' ? 'Pinterest' : (image.board || 'Pinterest'),
-                        originalFilename: typeof image === 'string'
-                            ? this.extractFilenameFromUrl(resolvedUrl)
-                            : (image.originalFilename || this.extractFilenameFromUrl(resolvedUrl))
-                    };
-
-                    const imageSequence = successfulImages + 1;
-                    const filename = this.buildIndexedFilename(
-                        imageSequence,
-                        batchTimestamp,
-                        resolvedUrl,
-                        imageData.originalFilename
-                    );
-                    zip.file(filename, arrayBuffer);
-
-                    successfulImages++;
-                    completedImages++;
-                    const progress = (completedImages / totalImages) * 50;
-                    this.sendProgressUpdate(progress, `已获取 ${completedImages}/${totalImages} 张图片`);
-
-                    const imageId = typeof image === 'string' ? `img_${i + batchIndex}` : (image.id || `img_${i + batchIndex}`);
-                    return { success: true, imageId };
-                } catch (error) {
-                    completedImages++;
-                    failedImages++;
-                    const progress = (completedImages / totalImages) * 50;
-                    this.sendProgressUpdate(progress, `已处理 ${completedImages}/${totalImages} 张（失败 ${failedImages} 张）`);
-
-                    const imageId = typeof image === 'string' ? `img_${i + batchIndex}` : (image.id || `img_${i + batchIndex}`);
-                    const baseErrorMessage = error instanceof Error ? error.message : String(error);
-                    const errorMessage = `${baseErrorMessage}（已跳过）`;
-                    return {
-                        success: false,
-                        error: errorMessage,
-                        imageId
-                    };
-                }
-            });
-
-            const batchResults = await Promise.all(batchPromises);
-            results.push(...batchResults);
-
-            if (i + batchSize < images.length) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-        }
-
-        // 全部下载失败时不生成空 ZIP，直接回传错误给 UI。
-        if (successfulImages === 0) {
-            const errorMessage = '图片下载全部失败，未生成压缩包。';
-            this.sendProgressUpdate(100, errorMessage);
-            setTimeout(() => {
-                this.sendMessageToAllExtensionPages({ action: 'downloadError', error: errorMessage, results });
-            }, 500);
-            return results;
-        }
-
-        this.sendProgressUpdate(60, '图片获取完成，正在压缩打包...');
-
         try {
-            const zipBase64 = await zip.generateAsync(
-                {
-                    type: 'base64',
-                    compression: 'STORE'
-                },
-                (metadata) => {
-                    this.sendProgressUpdate(60 + metadata.percent * 0.35, `打包进度：${Math.round(metadata.percent)}%`);
-                }
-            );
-
-            this.sendProgressUpdate(95, '打包完成，正在触发下载...');
-
-            const zipDataUrl = `data:application/zip;base64,${zipBase64}`;
-            const zipDownloadFilename = `PinPinto/${zipName}`;
-            const downloadId = await chrome.downloads.download({
-                url: zipDataUrl,
-                filename: zipDownloadFilename,
-                conflictAction: 'uniquify'
-            });
-
-            this.activeDownloads.set(downloadId, {
-                imageData: { title: zipName, url: 'local-zip' },
-                settings,
-                startTime: Date.now(),
-                status: 'downloading',
-                isBatch: true,
-                requestedFilename: zipDownloadFilename
-            });
-
-            console.log(`ZIP download started with ID: ${downloadId}`);
-
-            this.sendProgressUpdate(
-                100,
-                `ZIP 已开始下载，成功保存 ${results.filter(r => r.success).length}/${totalImages} 张图片。`
-            );
-
-            setTimeout(() => {
-                this.sendMessageToAllExtensionPages({ action: 'downloadComplete', results });
-            }, 1000);
-
-            return results;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.error('Error generating or downloading ZIP:', error);
-            this.sendProgressUpdate(100, `打包下载失败：${errorMessage}`);
-
-            setTimeout(() => {
-                this.sendMessageToAllExtensionPages({ action: 'downloadError', error: errorMessage, results });
-            }, 1000);
-
-            return results;
+            return await runBatchDownload(this, images, settings);
+        } finally {
+            if (this.currentBatchJob) {
+                this.finishBatchJob(this.currentBatchJob);
+            }
         }
     }
 
@@ -502,56 +343,6 @@ class PinVaultProBackground {
 
     getDownloadCandidateUrls(rawUrl, highQualityEnabled) {
         return getDownloadCandidateUrlsHelper(rawUrl, highQualityEnabled, (url) => this.getHighQualityUrl(url));
-    }
-
-    async fetchImageArrayBuffer(candidateUrls, maxRetries = IMAGE_FETCH_MAX_RETRIES) {
-        let lastError = new Error('图片获取失败');
-
-        // 单图最多重试 3 次；失败则返回错误给当前图片并继续后续图片，避免整批中断。
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            // 先尝试高清 URL，再回退原始 URL，避免 originals 不存在时整图失败。
-            for (const url of candidateUrls) {
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
-                    const response = await fetch(url, {
-                        cache: 'no-store',
-                        signal: controller.signal
-                    }).finally(() => {
-                        clearTimeout(timeoutId);
-                    });
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
-
-                    const contentType = response.headers.get('content-type') || '';
-                    if (contentType && !contentType.startsWith('image/')) {
-                        throw new Error(`非图片响应: ${contentType}`);
-                    }
-
-                    const arrayBuffer = await response.arrayBuffer();
-                    if (arrayBuffer.byteLength === 0) {
-                        throw new Error('图片内容为空');
-                    }
-
-                    return { arrayBuffer, resolvedUrl: url };
-                } catch (error) {
-                    if (error instanceof Error && error.name === 'AbortError') {
-                        lastError = new Error(`请求超时（>${IMAGE_FETCH_TIMEOUT_MS / 1000}秒）：${url}`);
-                    } else {
-                        lastError = error instanceof Error ? error : new Error(String(error));
-                    }
-                }
-            }
-
-            if (attempt < maxRetries) {
-                // 简单线性退避，降低瞬时网络抖动导致的连续失败概率。
-                await new Promise((resolve) => setTimeout(resolve, attempt * 300));
-            }
-        }
-
-        const lastMessage = lastError?.message || '未知错误';
-        throw new Error(`图片获取失败（已重试 ${maxRetries} 次）：${lastMessage}`);
     }
 
     ensureUniqueFilename(filename, usedFilenames) {
@@ -580,6 +371,83 @@ class PinVaultProBackground {
             })
         );
         this.activeDownloads.clear();
+        await this.cancelCurrentBatch();
+    }
+
+    createBatchJob() {
+        const batchJob = {
+            ...createBatchJobState(this.nextBatchJobId++),
+            controllers: new Set<AbortController>()
+        };
+        this.currentBatchJob = batchJob;
+        return batchJob;
+    }
+
+    finishBatchJob(batchJob) {
+        batchJob.controllers.clear();
+        batchJob.activeDownloadIds.clear();
+
+        if (this.currentBatchJob?.id === batchJob.id) {
+            this.currentBatchJob = null;
+        }
+    }
+
+    throwIfBatchCancelled(batchJob) {
+        throwIfBatchJobCancelled(batchJob);
+    }
+
+    isBatchCancellationError(error) {
+        return isBatchCancellationError(error);
+    }
+
+    async cancelCurrentBatch() {
+        const batchJob = this.currentBatchJob;
+        if (!batchJob || isBatchJobCancelled(batchJob)) {
+            return false;
+        }
+
+        cancelBatchJobState(batchJob);
+        batchJob.controllers.forEach((controller) => controller.abort());
+
+        await Promise.all(
+            [...batchJob.activeDownloadIds].map(async (downloadId) => {
+                try {
+                    await chrome.downloads.cancel(downloadId);
+                } catch (error) {
+                    console.log('Skip cancel for batch download:', downloadId, error instanceof Error ? error.message : error);
+                }
+            })
+        );
+
+        this.notifyBatchCancelled(batchJob);
+        return true;
+    }
+
+    notifyBatchCancelled(batchJob) {
+        if (batchJob.notified) {
+            return;
+        }
+
+        markBatchJobNotified(batchJob);
+        this.sendMessageToAllExtensionPages({ action: 'downloadCancelled', jobId: batchJob.id });
+    }
+
+    sendBatchComplete(batchJob, results) {
+        if (shouldSkipBatchOutcome(batchJob)) {
+            this.notifyBatchCancelled(batchJob);
+            return;
+        }
+
+        this.sendMessageToAllExtensionPages({ action: 'downloadComplete', results });
+    }
+
+    sendBatchError(batchJob, error, results) {
+        if (shouldSkipBatchOutcome(batchJob)) {
+            this.notifyBatchCancelled(batchJob);
+            return;
+        }
+
+        this.sendMessageToAllExtensionPages({ action: 'downloadError', error, results });
     }
 
     sendProgressUpdate(progress, details) {

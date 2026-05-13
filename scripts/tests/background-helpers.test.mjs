@@ -65,3 +65,57 @@ test('background folder helpers preserve organization branches without date flak
   assert.equal(generateFolderPath({}, { folderOrganization: 'none' }, date), 'PinPinto Downloads');
   assert.equal(extractDomainFromUrl('not a url'), 'Unknown');
 });
+
+test('download path helpers keep single-image and zip downloads in the same root folder', async () => {
+  const {
+    PINPINTO_DOWNLOAD_ROOT,
+    buildSingleDownloadPath,
+    buildZipDownloadPath
+  } = await loadTsModule('src/background/download-path.ts');
+
+  assert.equal(PINPINTO_DOWNLOAD_ROOT, 'PinPinto');
+  assert.equal(buildSingleDownloadPath('PinPinto-20260505_101112.jpg'), 'PinPinto/PinPinto-20260505_101112.jpg');
+  assert.equal(buildZipDownloadPath('PinPinto_20260505_101112.zip'), 'PinPinto/PinPinto_20260505_101112.zip');
+});
+
+test('batch job helpers mark cancellation and suppress completion outcomes', async () => {
+  const {
+    PINPINTO_BATCH_CANCELLED,
+    cancelBatchJobState,
+    createBatchJobState,
+    isBatchCancellationError,
+    isBatchJobCancelled,
+    markBatchJobNotified,
+    shouldSkipBatchOutcome,
+    throwIfBatchJobCancelled
+  } = await loadTsModule('src/background/batch-job.ts');
+
+  const batchJob = createBatchJobState(7);
+
+  assert.equal(isBatchJobCancelled(batchJob), false);
+  assert.equal(shouldSkipBatchOutcome(batchJob), false);
+  assert.equal(batchJob.notified, false);
+
+  cancelBatchJobState(batchJob);
+  assert.equal(isBatchJobCancelled(batchJob), true);
+  assert.equal(shouldSkipBatchOutcome(batchJob), true);
+
+  assert.throws(() => throwIfBatchJobCancelled(batchJob), /PINPINTO_BATCH_CANCELLED/);
+  assert.equal(isBatchCancellationError(new Error(PINPINTO_BATCH_CANCELLED)), true);
+
+  markBatchJobNotified(batchJob);
+  assert.equal(batchJob.notified, true);
+});
+
+test('single-image and batch download paths stay separated under the shared root', async () => {
+  const { buildSingleFilename, buildIndexedFilename } = await loadTsModule('src/background/filename.ts');
+  const { buildSingleDownloadPath, buildZipDownloadPath } = await loadTsModule('src/background/download-path.ts');
+
+  const singlePath = buildSingleDownloadPath(buildSingleFilename('20260505_101112', 'https://example.com/a.png'));
+  const zipPath = buildZipDownloadPath('PinPinto_20260505_101112.zip');
+  const batchEntryName = buildIndexedFilename(1, '20260505_101112', 'https://example.com/a.png');
+
+  assert.equal(singlePath, 'PinPinto/PinPinto-20260505_101112.png');
+  assert.equal(zipPath, 'PinPinto/PinPinto_20260505_101112.zip');
+  assert.equal(batchEntryName, '001-20260505_101112.png');
+});

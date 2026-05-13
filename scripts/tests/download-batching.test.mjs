@@ -46,3 +46,29 @@ test('cursor batch planning can finish an exhausted partial batch without repeat
   assert.deepEqual(sliceBatchWindowFromIndex(images, 100, 180), images.slice(100, 180));
   assert.deepEqual(sliceBatchWindowFromIndex(images, 180, 280), []);
 });
+
+test('content session helpers anchor to visible images and discard earlier history', async () => {
+  const {
+    findViewportAnchorIndex,
+    sliceOrderedItems,
+    splitOrderedIdsAtIndex
+  } = await loadTsModule('src/content/session-helpers.ts');
+
+  const ids = ['img-1', 'img-2', 'img-3', 'img-4'];
+  const viewportCandidates = [
+    { top: -500, bottom: -200 },
+    { top: -80, bottom: 40 },
+    { top: 60, bottom: 280 },
+    { top: 400, bottom: 640 }
+  ];
+
+  assert.equal(findViewportAnchorIndex(viewportCandidates, 320), 1);
+  assert.deepEqual(sliceOrderedItems(ids, 1, 3), ['img-2', 'img-3']);
+  assert.deepEqual(
+    splitOrderedIdsAtIndex(ids, 2),
+    {
+      discarded: ['img-1', 'img-2'],
+      remaining: ['img-3', 'img-4']
+    }
+  );
+});
