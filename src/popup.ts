@@ -166,6 +166,10 @@ class PinVaultProPopup {
         document.getElementById('autoBatchLimit')?.addEventListener('change', (e) => {
             this.saveAutoBatchLimit((e.target as HTMLInputElement).value);
         });
+        document.getElementById('autoBatchLimit')?.addEventListener('input', (e) => {
+            const input = e.target as HTMLInputElement;
+            input.value = input.value.replace(/\D/g, '').slice(0, 4);
+        });
 
         document.getElementById('stopScrollBtn')?.addEventListener('click', () => this.stopAutoScroll());
 

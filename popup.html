@@ -134,10 +134,6 @@
                         </label>
                         <span class="toggle-text" id="autoBatchLabel" style="font-size: 13px; color: var(--text-secondary);" data-i18n="setting.autoBatch">Auto download</span>
                     </div>
-                    <label class="batch-limit-row" for="autoBatchLimit">
-                        <span class="batch-limit-label" data-i18n="setting.autoBatchLimit">Images per batch</span>
-                        <input class="batch-limit-input" type="number" id="autoBatchLimit" min="1" max="1000" step="1" value="100">
-                    </label>
                 </div>
                 <button class="btn btn-ghost" id="stopScrollBtn" disabled>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -146,6 +142,16 @@
                     </svg>
                     <span data-i18n="action.stop">Stop</span>
                 </button>
+            </div>
+
+            <div class="settings-panel batch-limit-panel">
+                <div class="panel-header" data-i18n="panel.autoBatchSettings">Auto batch settings</div>
+                <div class="batch-limit-area">
+                    <label class="batch-limit-row" for="autoBatchLimit">
+                        <span class="batch-limit-label" data-i18n="setting.autoBatchLimit">Images per batch</span>
+                        <input class="batch-limit-input" type="text" id="autoBatchLimit" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="100">
+                    </label>
+                </div>
             </div>
 
             <div class="download-section">

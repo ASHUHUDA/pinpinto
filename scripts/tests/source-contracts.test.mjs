@@ -70,6 +70,17 @@ test('clear actions route through full page-session reset instead of deselect-on
   assert.match(contentSource, /this\.session\.clearAllImages\(\);/);
 });
 
+test('auto-batch limit stays in a separate manual-input area', async () => {
+  const popupHtml = await readWorkspaceFile('popup.html');
+  const sidebarHtml = await readWorkspaceFile('sidebar.html');
+
+  for (const html of [popupHtml, sidebarHtml]) {
+    assert.match(html, /data-i18n="panel\.autoBatchSettings"/);
+    assert.match(html, /type="text" id="autoBatchLimit" inputmode="numeric"/);
+    assert.doesNotMatch(html, /type="number"[^>]*id="autoBatchLimit"|id="autoBatchLimit"[^>]*type="number"/);
+  }
+});
+
 test('cancel helpers shut down auto-scroll bookkeeping in both popup and sidebar', async () => {
   const popupSource = await readWorkspaceFile('src/popup/download-actions.ts');
   const sidebarSource = await readWorkspaceFile('src/sidebar/download-actions.ts');
