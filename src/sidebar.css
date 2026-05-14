@@ -359,6 +359,24 @@ body {
     font-weight: 500;
 }
 
+.batch-limit-input {
+    width: 88px;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: right;
+}
+
+.batch-limit-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-primary-dim);
+}
+
 .setting-row:hover .setting-text {
     color: var(--text-primary);
 }

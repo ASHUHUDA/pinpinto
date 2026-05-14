@@ -463,6 +463,38 @@ body {
     color: var(--text-primary);
 }
 
+.batch-limit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.batch-limit-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.batch-limit-input {
+    width: 88px;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: right;
+}
+
+.batch-limit-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-primary-dim);
+}
+
 /* SWITCH */
 .switch {
     position: relative;

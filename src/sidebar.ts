@@ -2,6 +2,7 @@ import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from '
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
+import { normalizeAutoBatchLimit } from './shared/download-batching';
 import {
     cancelDownload as cancelSidebarDownload,
     clearAllImagesOnPage,
@@ -39,6 +40,7 @@ class PinVaultProSidebar {
     async init() {
         await this.loadSettings();
         this.setupEventListeners();
+        this.setVersionBadge();
         this.bindButtonPressFeedback();
         this.applyLanguage();
         this.checkPinterestStatus();
@@ -97,6 +99,9 @@ class PinVaultProSidebar {
                 await this.saveSetting('autoScroll', true);
                 await this.toggleAutoScroll(true);
             }
+        });
+        document.getElementById('autoBatchLimit')?.addEventListener('change', (e) => {
+            this.saveAutoBatchLimit((e.target as HTMLInputElement).value);
         });
 
         document.getElementById('cancelDownloadBtn')?.addEventListener('click', () => {
@@ -352,9 +357,28 @@ class PinVaultProSidebar {
 
             const autoBatchToggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
             if (autoBatchToggle) autoBatchToggle.checked = settings.autoBatchDownload === true;
+            this.syncAutoBatchLimitInput(settings.autoBatchLimit);
         } catch (error) {
             console.error('Error loading settings:', error);
         }
+    }
+
+    setVersionBadge() {
+        const version = chrome.runtime.getManifest().version;
+        document.querySelectorAll<HTMLElement>('.badge-version').forEach((badge) => {
+            badge.textContent = `v${version}`;
+        });
+    }
+
+    syncAutoBatchLimitInput(value: unknown) {
+        const input = document.getElementById('autoBatchLimit') as HTMLInputElement | null;
+        if (input) input.value = String(normalizeAutoBatchLimit(value));
+    }
+
+    async saveAutoBatchLimit(value: unknown) {
+        const limit = normalizeAutoBatchLimit(value);
+        this.syncAutoBatchLimitInput(limit);
+        await this.saveSetting('autoBatchLimit', limit);
     }
 
     async saveSetting(key: string, value: unknown) {

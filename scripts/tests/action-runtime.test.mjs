@@ -186,6 +186,147 @@ test('sidebar toggleAutoScroll anchors and discards historical images before sta
   assert.equal(timerCallbacks.length, 1);
 });
 
+test('popup auto-batch uses the configured image limit', async () => {
+  installMinimalDom();
+  document.getElementById('totalImages').textContent = '25';
+
+  globalThis.chrome = {
+    tabs: {
+      async sendMessage(tabId, payload) {
+        if (payload.action === 'getViewportAnchor') {
+          return { anchorIndex: 0 };
+        }
+        return { success: true };
+      }
+    },
+    storage: {
+      sync: {
+        async get() {
+          return {
+            highQuality: true,
+            autoScroll: false,
+            autoBatchDownload: true,
+            autoBatchLimit: 25,
+            filenameFormat: 'title_date',
+            folderOrganization: 'date',
+            customFolder: ''
+          };
+        }
+      }
+    }
+  };
+
+  const timerCallbacks = [];
+  globalThis.window.setInterval = (callback) => {
+    timerCallbacks.push(callback);
+    return 31;
+  };
+  globalThis.window.clearInterval = () => {};
+
+  const popupActions = await loadTsModule('src/popup/download-actions.ts');
+  const startCalls = [];
+  const controller = {
+    language: 'zh',
+    batchCount: 0,
+    nextBatchStartIndex: 0,
+    activeAutoBatchSize: 0,
+    isBatchingNow: false,
+    isAutoScrolling: false,
+    autoScrollStatsTimer: null,
+    async getActivePinterestTab() {
+      return { id: 123, url: 'https://www.pinterest.com/test/' };
+    },
+    async rememberSidebarTargetTab() {},
+    async ensureContentScriptInjected() { return true; },
+    updateStatsDisplay() {},
+    async saveSetting() {},
+    setAutoScrollUi() {},
+    async updateImageCounts() {},
+    startDownload(options) {
+      startCalls.push(options);
+      return true;
+    },
+    async toggleAutoScroll() {}
+  };
+
+  await popupActions.toggleAutoScroll(controller, true);
+  await timerCallbacks[0]();
+  await Promise.resolve();
+
+  assert.deepEqual(startCalls, [
+    { autoBatchMode: true, batchStartIndex: 0, batchEndIndex: 25 }
+  ]);
+});
+
+test('sidebar auto-batch uses the configured image limit', async () => {
+  installMinimalDom();
+  document.getElementById('totalImages').textContent = '25';
+
+  globalThis.chrome = {
+    tabs: {
+      async sendMessage(tabId, payload) {
+        if (payload.action === 'getViewportAnchor') {
+          return { anchorIndex: 0 };
+        }
+        return { success: true };
+      }
+    },
+    storage: {
+      sync: {
+        async get() {
+          return {
+            highQuality: true,
+            autoScroll: false,
+            autoBatchDownload: true,
+            autoBatchLimit: 25,
+            filenameFormat: 'title_date',
+            folderOrganization: 'date',
+            customFolder: ''
+          };
+        }
+      }
+    }
+  };
+
+  const timerCallbacks = [];
+  globalThis.window.setInterval = (callback) => {
+    timerCallbacks.push(callback);
+    return 41;
+  };
+  globalThis.window.clearInterval = () => {};
+
+  const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
+  const startCalls = [];
+  const controller = {
+    batchCount: 0,
+    nextBatchStartIndex: 0,
+    activeAutoBatchSize: 0,
+    isBatchingNow: false,
+    autoScrollStatsTimer: null,
+    async resolveTargetTab() {
+      return { id: 321, url: 'https://www.pinterest.com/test/' };
+    },
+    async ensureContentScriptInjected() { return true; },
+    updateStatsDisplay() {},
+    async updateStats() {},
+    async saveSetting() {},
+    startDownload(options) {
+      startCalls.push(options);
+      return true;
+    },
+    async toggleAutoScroll() {},
+    t() { return ''; }
+  };
+
+  await sidebarActions.toggleAutoScroll(controller, true);
+  await timerCallbacks[0]();
+  await Promise.resolve();
+
+  assert.deepEqual(startCalls, [
+    { autoBatchMode: true, batchStartIndex: 0, batchEndIndex: 25 }
+  ]);
+});
+
 test('popup cancelDownload sends batch-cancel message and clears local auto-scroll state', async () => {
   installMinimalDom();
 

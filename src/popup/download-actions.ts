@@ -1,4 +1,4 @@
-import { AUTO_BATCH_DOWNLOAD_LIMIT, getAutoBatchPlan } from '../shared/download-batching';
+import { getAutoBatchPlan, normalizeAutoBatchLimit } from '../shared/download-batching';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from '../shared/download-settings';
 
 type PopupDownloadController = {
@@ -197,7 +197,9 @@ export async function toggleAutoScroll(
 
                 const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
                 const autoScrollStatus = await getAutoScrollStatus(controller, targetTab.id);
+                const autoBatchLimit = normalizeAutoBatchLimit(currentSettings.autoBatchLimit);
                 const batchPlan = getAutoBatchPlan(total, controller.nextBatchStartIndex, currentSettings.autoBatchDownload === true, {
+                    limit: autoBatchLimit,
                     autoScrollExhausted: autoScrollStatus?.stopReason === 'exhausted'
                 });
                 if (!batchPlan.shouldStart) {
@@ -273,7 +275,7 @@ export async function startDownload(
                 : controller.nextBatchStartIndex;
             const batchEndIndex = typeof options.batchEndIndex === 'number'
                 ? options.batchEndIndex
-                : batchStartIndex + AUTO_BATCH_DOWNLOAD_LIMIT;
+                : batchStartIndex + normalizeAutoBatchLimit(settings.autoBatchLimit);
 
             try {
                 await controller.ensureContentScriptInjected(tab.id);

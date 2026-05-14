@@ -1,4 +1,35 @@
 export const AUTO_BATCH_DOWNLOAD_LIMIT = 100;
+export const MIN_AUTO_BATCH_DOWNLOAD_LIMIT = 1;
+export const MAX_AUTO_BATCH_DOWNLOAD_LIMIT = 1000;
+
+export function normalizeAutoBatchLimit(
+    value: unknown,
+    fallback = AUTO_BATCH_DOWNLOAD_LIMIT
+): number {
+    const fallbackNumber = Number.isFinite(fallback)
+        ? Math.floor(fallback)
+        : AUTO_BATCH_DOWNLOAD_LIMIT;
+    const normalizedFallback = Math.min(
+        MAX_AUTO_BATCH_DOWNLOAD_LIMIT,
+        Math.max(MIN_AUTO_BATCH_DOWNLOAD_LIMIT, fallbackNumber)
+    );
+
+    const parsedValue = typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+            ? Number(value)
+            : NaN;
+
+    if (!Number.isFinite(parsedValue)) {
+        return normalizedFallback;
+    }
+
+    const integerValue = Math.floor(parsedValue);
+    return Math.min(
+        MAX_AUTO_BATCH_DOWNLOAD_LIMIT,
+        Math.max(MIN_AUTO_BATCH_DOWNLOAD_LIMIT, integerValue)
+    );
+}
 
 export function getNextBatchThreshold(
     batchCount: number,

@@ -23,7 +23,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-            <span class="badge-version">v1.5.3</span>
+            <span class="badge-version">v1.5.5</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -132,8 +132,12 @@
                             <input type="checkbox" id="autoBatchToggle">
                             <span class="slider round"></span>
                         </label>
-                        <span class="toggle-text" id="autoBatchLabel" style="font-size: 13px; color: var(--text-secondary);" data-i18n="setting.autoBatch">Auto download (200/{0}/3)</span>
+                        <span class="toggle-text" id="autoBatchLabel" style="font-size: 13px; color: var(--text-secondary);" data-i18n="setting.autoBatch">Auto download</span>
                     </div>
+                    <label class="batch-limit-row" for="autoBatchLimit">
+                        <span class="batch-limit-label" data-i18n="setting.autoBatchLimit">Images per batch</span>
+                        <input class="batch-limit-input" type="number" id="autoBatchLimit" min="1" max="1000" step="1" value="100">
+                    </label>
                 </div>
                 <button class="btn btn-ghost" id="stopScrollBtn" disabled>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">

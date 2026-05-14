@@ -7,6 +7,7 @@ A Chrome/Edge Manifest V3 extension for collecting and batch-downloading Pintere
 ## Features
 - Detect and select images on the page
 - Auto-scroll to collect more images
+- Customize the image count for each auto-download batch
 - Batch ZIP download
 - Popup and side-panel entry points
 - Target-tab locking (side panel actions stay on the intended Pinterest tab)

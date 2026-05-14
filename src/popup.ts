@@ -2,6 +2,7 @@ import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from '
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
+import { normalizeAutoBatchLimit } from './shared/download-batching';
 import {
     cancelDownload as cancelPopupDownload,
     clearAllImagesOnPage,
@@ -25,6 +26,7 @@ type PopupSettings = {
     highQuality: boolean;
     autoScroll: boolean;
     autoBatchDownload: boolean;
+    autoBatchLimit: number;
     theme: string;
     advancedFeaturesEnabled: boolean;
     smartFeaturesEnabled: boolean;
@@ -71,6 +73,7 @@ class PinVaultProPopup {
     async init() {
         await this.loadSettings();
         this.setupEventListeners();
+        this.setVersionBadge();
         this.bindButtonPressFeedback();
         this.updateLanguage();
         await this.checkPinterestConnection();
@@ -99,6 +102,7 @@ class PinVaultProPopup {
         if (autoBatchToggle) {
             autoBatchToggle.checked = settings.autoBatchDownload;
         }
+        this.syncAutoBatchLimitInput(settings.autoBatchLimit);
 
         this.applyTheme(settings.theme);
 
@@ -158,6 +162,9 @@ class PinVaultProPopup {
                 await this.saveSetting('autoScroll', true);
                 await this.toggleAutoScroll(true);
             }
+        });
+        document.getElementById('autoBatchLimit')?.addEventListener('change', (e) => {
+            this.saveAutoBatchLimit((e.target as HTMLInputElement).value);
         });
 
         document.getElementById('stopScrollBtn')?.addEventListener('click', () => this.stopAutoScroll());
@@ -409,6 +416,24 @@ class PinVaultProPopup {
         if (toggle) {
             toggle.checked = enabled;
         }
+    }
+
+    setVersionBadge() {
+        const version = chrome.runtime.getManifest().version;
+        document.querySelectorAll<HTMLElement>('.badge-version').forEach((badge) => {
+            badge.textContent = `v${version}`;
+        });
+    }
+
+    syncAutoBatchLimitInput(value: unknown) {
+        const input = document.getElementById('autoBatchLimit') as HTMLInputElement | null;
+        if (input) input.value = String(normalizeAutoBatchLimit(value));
+    }
+
+    async saveAutoBatchLimit(value: unknown) {
+        const limit = normalizeAutoBatchLimit(value);
+        this.syncAutoBatchLimitInput(limit);
+        await this.saveSetting('autoBatchLimit', limit);
     }
 
     async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}) { return startPopupDownload(this, options); }
