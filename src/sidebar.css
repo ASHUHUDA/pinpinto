@@ -359,16 +359,30 @@ body {
     font-weight: 500;
 }
 
+.batch-limit-panel {
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}
+
+.batch-limit-panel .panel-title {
+    margin-bottom: 10px;
+}
+
+.batch-limit-row {
+    gap: 10px;
+    padding: 8px 0 0;
+}
+
 .batch-limit-input {
-    width: 88px;
-    min-height: 44px;
-    padding: 8px 10px;
+    width: 64px;
+    min-height: 40px;
+    padding: 6px 8px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
     font: inherit;
-    text-align: right;
+    text-align: center;
 }
 
 .batch-limit-input:focus {

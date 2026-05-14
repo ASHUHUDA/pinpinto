@@ -467,8 +467,16 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    margin-top: 10px;
+    gap: 10px;
+}
+
+.batch-limit-panel {
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.batch-limit-panel .panel-header {
+    margin-bottom: 10px;
 }
 
 .batch-limit-label {
@@ -478,15 +486,15 @@ body {
 }
 
 .batch-limit-input {
-    width: 88px;
-    min-height: 44px;
-    padding: 8px 10px;
+    width: 64px;
+    min-height: 40px;
+    padding: 6px 8px;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
     background: var(--bg-surface);
     color: var(--text-primary);
     font: inherit;
-    text-align: right;
+    text-align: center;
 }
 
 .batch-limit-input:focus {
