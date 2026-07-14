@@ -1,18 +1,7 @@
 // Background script for PinPinto Extension
 import { PINTEREST_MATCH_PATTERNS, isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
-import {
-    cancelBatchJobState,
-    createBatchJobState,
-    isBatchCancellationError,
-    isBatchJobCancelled,
-    markBatchJobNotified,
-    PINPINTO_BATCH_CANCELLED,
-    shouldSkipBatchOutcome,
-    throwIfBatchJobCancelled,
-    type BatchJobState
-} from './background/batch-job';
-import { buildSingleDownloadPath, buildZipDownloadPath } from './background/download-path';
-import { runBatchDownload } from './background/batch-download';
+import { BatchCoordinator, type TrackedDownloadInfo } from './background/batch-coordinator';
+import { buildSingleDownloadPath } from './background/download-path';
 import {
     getDownloadCandidateUrls as getDownloadCandidateUrlsHelper,
     getHighQualityUrl as getHighQualityUrlHelper,
@@ -33,20 +22,27 @@ import {
 } from './background/folder-path';
 
 class PinVaultProBackground {
-    activeDownloads: Map<number, any>;
+    activeDownloads: Map<number, TrackedDownloadInfo>;
     downloadQueue: any[];
     isProcessingQueue: boolean;
     maxConcurrentDownloads: number;
-    currentBatchJob: (BatchJobState & { controllers: Set<AbortController> }) | null;
-    nextBatchJobId: number;
+    batchCoordinator: BatchCoordinator;
 
     constructor() {
         this.activeDownloads = new Map();
         this.downloadQueue = [];
         this.isProcessingQueue = false;
         this.maxConcurrentDownloads = 3;
-        this.currentBatchJob = null;
-        this.nextBatchJobId = 1;
+        this.batchCoordinator = new BatchCoordinator({
+            activeDownloads: this.activeDownloads,
+            maxConcurrentDownloads: this.maxConcurrentDownloads,
+            normalizeImageUrlForDeduplication: (image, settings) => this.normalizeImageUrlForDeduplication(image, settings),
+            getDownloadCandidateUrls: (rawUrl, highQualityEnabled) => this.getDownloadCandidateUrls(rawUrl, highQualityEnabled),
+            buildIndexedFilename: (sequence, timestamp, url, originalFilename) => this.buildIndexedFilename(sequence, timestamp, url, originalFilename),
+            extractFilenameFromUrl: (url) => this.extractFilenameFromUrl(url),
+            formatLocalTimestamp: () => this.formatLocalTimestamp(),
+            broadcast: (message) => this.sendMessageToAllExtensionPages(message)
+        });
 
         this.init();
     }
@@ -86,6 +82,9 @@ class PinVaultProBackground {
         // Tab updates
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             this.handleTabUpdate(tabId, changeInfo, tab);
+        });
+        chrome.tabs.onRemoved.addListener((tabId) => {
+            void this.batchCoordinator.handleTargetTabClosed(tabId);
         });
     }
 
@@ -169,8 +168,23 @@ class PinVaultProBackground {
 
                 case 'downloadImages':
                     console.log('Background: Received downloadImages request with', request.images?.length || 0, 'images');
-                    const results = await this.downloadMultipleImages(request.images || request.urls, request.settings);
-                    sendResponse({ success: true, results });
+                    sendResponse(await this.batchCoordinator.start(request, sender.tab?.id));
+                    break;
+
+                case 'getBatchTaskState':
+                    const snapshot = await this.batchCoordinator.getSnapshot();
+                    sendResponse({
+                        snapshot,
+                        matchesTargetTab: sender.tab?.id === undefined || snapshot?.targetTabId === sender.tab.id
+                    });
+                    break;
+
+                case 'autoBatchWindowReady':
+                    sendResponse({ accepted: await this.batchCoordinator.acceptAutoBatchWindow(request, sender.tab?.id) });
+                    break;
+
+                case 'finishAutoBatchSession':
+                    sendResponse({ success: await this.batchCoordinator.finishAutoSession(request.jobId, sender.tab?.id) });
                     break;
 
                 case 'cancelDownload':
@@ -179,14 +193,13 @@ class PinVaultProBackground {
                     } else {
                         // Preserve single-image downloads when legacy callers request a generic cancel.
                         // Batch-stop UI should only terminate the active ZIP job, not unrelated downloads.
-                        await this.cancelCurrentBatch();
+                        await this.batchCoordinator.cancel(request.jobId);
                     }
                     sendResponse({ success: true });
                     break;
 
                 case 'cancelCurrentBatch':
-                    await this.cancelCurrentBatch();
-                    sendResponse({ success: true });
+                    sendResponse({ success: await this.batchCoordinator.cancel(request.jobId) });
                     break;
 
                 case 'getDownloadStats':
@@ -288,19 +301,23 @@ class PinVaultProBackground {
     async downloadSingleImage(imageData, settings) {
         try {
             console.log('Starting download for:', imageData);
+            const downloadUrl = settings?.highQuality === false
+                ? imageData.url
+                : this.getHighQualityUrl(imageData.url);
 
             const singleTimestamp = this.formatLocalTimestamp();
             const filename = this.buildSingleFilename(
                 singleTimestamp,
-                imageData.url,
+                downloadUrl,
                 imageData.originalFilename
             );
             const requestedFilename = buildSingleDownloadPath(filename);
 
             const downloadOptions: chrome.downloads.DownloadOptions = {
-                url: imageData.url,
+                url: downloadUrl,
                 filename: requestedFilename,
-                conflictAction: 'uniquify'
+                conflictAction: 'uniquify',
+                saveAs: false
             };
 
             console.log('Download options:', downloadOptions);
@@ -324,16 +341,6 @@ class PinVaultProBackground {
             console.error('Error downloading image:', error);
             console.error('Image data:', imageData);
             throw error;
-        }
-    }
-
-    async downloadMultipleImages(images, settings) {
-        try {
-            return await runBatchDownload(this, images, settings);
-        } finally {
-            if (this.currentBatchJob) {
-                this.finishBatchJob(this.currentBatchJob);
-            }
         }
     }
 
@@ -371,95 +378,7 @@ class PinVaultProBackground {
             })
         );
         this.activeDownloads.clear();
-        await this.cancelCurrentBatch();
-    }
-
-    createBatchJob() {
-        const batchJob = {
-            ...createBatchJobState(this.nextBatchJobId++),
-            controllers: new Set<AbortController>()
-        };
-        this.currentBatchJob = batchJob;
-        return batchJob;
-    }
-
-    finishBatchJob(batchJob) {
-        batchJob.controllers.clear();
-        batchJob.activeDownloadIds.clear();
-
-        if (this.currentBatchJob?.id === batchJob.id) {
-            this.currentBatchJob = null;
-        }
-    }
-
-    throwIfBatchCancelled(batchJob) {
-        throwIfBatchJobCancelled(batchJob);
-    }
-
-    isBatchCancellationError(error) {
-        return isBatchCancellationError(error);
-    }
-
-    async cancelCurrentBatch() {
-        const batchJob = this.currentBatchJob;
-        if (!batchJob || isBatchJobCancelled(batchJob)) {
-            return false;
-        }
-
-        cancelBatchJobState(batchJob);
-        batchJob.controllers.forEach((controller) => controller.abort());
-
-        await Promise.all(
-            [...batchJob.activeDownloadIds].map(async (downloadId) => {
-                try {
-                    await chrome.downloads.cancel(downloadId);
-                } catch (error) {
-                    console.log('Skip cancel for batch download:', downloadId, error instanceof Error ? error.message : error);
-                }
-            })
-        );
-
-        this.notifyBatchCancelled(batchJob);
-        return true;
-    }
-
-    notifyBatchCancelled(batchJob) {
-        if (batchJob.notified) {
-            return;
-        }
-
-        markBatchJobNotified(batchJob);
-        this.sendMessageToAllExtensionPages({ action: 'downloadCancelled', jobId: batchJob.id });
-    }
-
-    sendBatchComplete(batchJob, results) {
-        if (shouldSkipBatchOutcome(batchJob)) {
-            this.notifyBatchCancelled(batchJob);
-            return;
-        }
-
-        this.sendMessageToAllExtensionPages({ action: 'downloadComplete', results });
-    }
-
-    sendBatchError(batchJob, error, results) {
-        if (shouldSkipBatchOutcome(batchJob)) {
-            this.notifyBatchCancelled(batchJob);
-            return;
-        }
-
-        this.sendMessageToAllExtensionPages({ action: 'downloadError', error, results });
-    }
-
-    sendProgressUpdate(progress, details) {
-        // Send progress update to all active extension pages (popup and sidebar)
-        const message = {
-            action: 'downloadProgress',
-            progress: progress,
-            details: details
-        };
-
-        // Send to all extension pages
-        this.sendMessageToAllExtensionPages(message);
+        await this.batchCoordinator.cancel();
     }
 
     async sendMessageToAllExtensionPages(message) {
@@ -492,6 +411,7 @@ class PinVaultProBackground {
         const downloadId = downloadDelta.id;
         const downloadInfo = this.activeDownloads.get(downloadId);
 
+        this.batchCoordinator.handleDownloadChange(downloadDelta, downloadInfo);
         if (!downloadInfo) return;
 
         // Update download status
@@ -504,7 +424,7 @@ class PinVaultProBackground {
 
                 // Show completion log for single downloads
                 if (!downloadInfo.isBatch) {
-                    console.log('Download Complete:', downloadInfo.imageData.title);
+                    console.log('Download Complete:', typeof downloadInfo.imageData === 'string' ? downloadInfo.imageData : downloadInfo.imageData.title);
                 }
 
                 // Clean up
@@ -516,7 +436,7 @@ class PinVaultProBackground {
                 downloadInfo.error = downloadDelta.error || 'Download interrupted';
 
                 // Show error log
-                console.log('Download Failed:', downloadInfo.imageData.title);
+                console.log('Download Failed:', typeof downloadInfo.imageData === 'string' ? downloadInfo.imageData : downloadInfo.imageData.title);
 
                 // Clean up
                 this.activeDownloads.delete(downloadId);

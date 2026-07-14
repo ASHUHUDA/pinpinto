@@ -2,12 +2,14 @@
 
 [中文 README](README.md)
 
-A Chrome/Edge Manifest V3 extension for collecting and batch-downloading Pinterest images.
+A Pinterest image collection and batch-download extension for Chrome, Edge, and Firefox.
 
 ## Features
 - Detect and select images on the page
 - Auto-scroll to collect more images
 - Customize the image count for each auto-download batch
+- Background-owned batch state that reconnects after the popup or side panel is reopened
+- Browser fallback downloads for images that cannot be fetched into the ZIP
 - Batch ZIP download
 - Popup and side-panel entry points
 - Target-tab locking (side panel actions stay on the intended Pinterest tab)
@@ -34,7 +36,7 @@ corepack.cmd pnpm build
 # dev server
 corepack.cmd pnpm dev
 
-# automated verification (typecheck + build)
+# automated verification (typecheck + behavior tests + Chrome build)
 corepack.cmd pnpm run verify
 
 # build only
@@ -47,13 +49,17 @@ corepack.cmd pnpm run build:browsers
 `build:browsers` will:
 - output the Chrome package to `artifacts/pinpinto-chrome-v*.zip`
 - output the Firefox package to `artifacts/pinpinto-firefox-v*.xpi`
+- target Firefox 115 or newer for module background scripts and `storage.session`
 - and **keep `dist` as the Chrome build**, so Chrome / Edge do not accidentally load a Firefox manifest
 
 ## Project Structure
-- `src/background.ts`: download orchestration
-- `src/content.ts`: page scan and selection overlays
-- `src/popup.ts`: popup controller
-- `src/sidebar.ts`: side-panel controller
+- `src/background.ts`: browser events and message entry point
+- `src/background/batch-coordinator.ts`: batch lifecycle, cancellation, and download settlement
+- `src/background/batch-download.ts`: image fetching, ZIP creation, and browser fallback downloads
+- `src/content.ts`: page scanning and selection-overlay entry point
+- `src/content/auto-batch-session.ts`: auto-scroll windows and background re-handshake
+- `src/shared/batch-task.ts`: shared batch-task contracts
+- `src/popup.ts` / `src/sidebar.ts`: disposable, reconnectable control surfaces
 - `src/shared/pinterest.ts`: Pinterest domain constants
 - `manifest.config.ts`: CRX manifest source
 

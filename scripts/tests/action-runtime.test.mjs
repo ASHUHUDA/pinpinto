@@ -27,7 +27,7 @@ function installMinimalDom() {
   globalThis.clearTimeout = () => {};
 }
 
-test('popup toggleAutoScroll anchors and discards historical images before starting auto-scroll', async () => {
+test('popup auto-batch delegates scrolling ownership to the background task', async () => {
   installMinimalDom();
 
   const calls = [];
@@ -67,6 +67,7 @@ test('popup toggleAutoScroll anchors and discards historical images before start
   const popupActions = await loadTsModule('src/popup/download-actions.ts');
 
   const savedSettings = [];
+  const startCalls = [];
   let updateImageCountsCalls = 0;
   const controller = {
     language: 'zh',
@@ -89,26 +90,21 @@ test('popup toggleAutoScroll anchors and discards historical images before start
     async updateImageCounts() {
       updateImageCountsCalls++;
     },
-    async startDownload() { return true; },
+    async startDownload(options) { startCalls.push(options); return true; },
     async toggleAutoScroll() {}
   };
 
   await popupActions.toggleAutoScroll(controller, true);
 
-  assert.deepEqual(
-    calls.map((entry) => entry.action).slice(0, 3),
-    ['getViewportAnchor', 'discardImagesBeforeIndex', 'startAutoScroll']
-  );
-  assert.equal(updateImageCountsCalls, 1);
-  assert.equal(controller.isAutoScrolling, true);
-  assert.equal(controller.batchCount, 0);
-  assert.equal(controller.nextBatchStartIndex, 0);
-  assert.equal(controller.activeAutoBatchSize, 0);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(startCalls, [{ autoBatchMode: true }]);
+  assert.equal(updateImageCountsCalls, 0);
+  assert.equal(controller.isAutoScrolling, false);
   assert.deepEqual(savedSettings.at(-1), ['autoScroll', true]);
-  assert.equal(timerCallbacks.length, 1);
+  assert.equal(timerCallbacks.length, 0);
 });
 
-test('sidebar toggleAutoScroll anchors and discards historical images before starting auto-scroll', async () => {
+test('sidebar auto-batch delegates scrolling ownership to the background task', async () => {
   installMinimalDom();
 
   const calls = [];
@@ -148,6 +144,7 @@ test('sidebar toggleAutoScroll anchors and discards historical images before sta
   const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
 
   const savedSettings = [];
+  const startCalls = [];
   let updateStatsCalls = 0;
   const controller = {
     batchCount: 7,
@@ -167,23 +164,18 @@ test('sidebar toggleAutoScroll anchors and discards historical images before sta
     async saveSetting(key, value) {
       savedSettings.push([key, value]);
     },
-    async startDownload() { return true; },
+    async startDownload(options) { startCalls.push(options); return true; },
     async toggleAutoScroll() {},
     t() { return ''; }
   };
 
   await sidebarActions.toggleAutoScroll(controller, true);
 
-  assert.deepEqual(
-    calls.map((entry) => entry.action).slice(0, 3),
-    ['getViewportAnchor', 'discardImagesBeforeIndex', 'startAutoScroll']
-  );
-  assert.equal(updateStatsCalls, 1);
-  assert.equal(controller.batchCount, 0);
-  assert.equal(controller.nextBatchStartIndex, 0);
-  assert.equal(controller.activeAutoBatchSize, 0);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(startCalls, [{ autoBatchMode: true }]);
+  assert.equal(updateStatsCalls, 0);
   assert.deepEqual(savedSettings.at(-1), ['autoScroll', true]);
-  assert.equal(timerCallbacks.length, 1);
+  assert.equal(timerCallbacks.length, 0);
 });
 
 test('popup auto-batch uses the configured image limit', async () => {
@@ -216,13 +208,6 @@ test('popup auto-batch uses the configured image limit', async () => {
     }
   };
 
-  const timerCallbacks = [];
-  globalThis.window.setInterval = (callback) => {
-    timerCallbacks.push(callback);
-    return 31;
-  };
-  globalThis.window.clearInterval = () => {};
-
   const popupActions = await loadTsModule('src/popup/download-actions.ts');
   const startCalls = [];
   const controller = {
@@ -242,20 +227,17 @@ test('popup auto-batch uses the configured image limit', async () => {
     async saveSetting() {},
     setAutoScrollUi() {},
     async updateImageCounts() {},
-    startDownload(options) {
-      startCalls.push(options);
-      return true;
-    },
+    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-25' }; },
+    async cancelBatchTask() { return true; },
     async toggleAutoScroll() {}
   };
 
-  await popupActions.toggleAutoScroll(controller, true);
-  await timerCallbacks[0]();
-  await Promise.resolve();
+  await popupActions.startDownload(controller, { autoBatchMode: true });
 
-  assert.deepEqual(startCalls, [
-    { autoBatchMode: true, batchStartIndex: 0, batchEndIndex: 25 }
-  ]);
+  assert.equal(startCalls.length, 1);
+  assert.equal(startCalls[0].mode, 'auto');
+  assert.equal(startCalls[0].targetTabId, 123);
+  assert.equal(startCalls[0].autoBatchLimit, 25);
 });
 
 test('sidebar auto-batch uses the configured image limit', async () => {
@@ -288,13 +270,6 @@ test('sidebar auto-batch uses the configured image limit', async () => {
     }
   };
 
-  const timerCallbacks = [];
-  globalThis.window.setInterval = (callback) => {
-    timerCallbacks.push(callback);
-    return 41;
-  };
-  globalThis.window.clearInterval = () => {};
-
   const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
   const startCalls = [];
   const controller = {
@@ -310,21 +285,18 @@ test('sidebar auto-batch uses the configured image limit', async () => {
     updateStatsDisplay() {},
     async updateStats() {},
     async saveSetting() {},
-    startDownload(options) {
-      startCalls.push(options);
-      return true;
-    },
+    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-25' }; },
+    async cancelBatchTask() { return true; },
     async toggleAutoScroll() {},
     t() { return ''; }
   };
 
-  await sidebarActions.toggleAutoScroll(controller, true);
-  await timerCallbacks[0]();
-  await Promise.resolve();
+  await sidebarActions.startDownload(controller, { autoBatchMode: true });
 
-  assert.deepEqual(startCalls, [
-    { autoBatchMode: true, batchStartIndex: 0, batchEndIndex: 25 }
-  ]);
+  assert.equal(startCalls.length, 1);
+  assert.equal(startCalls[0].mode, 'auto');
+  assert.equal(startCalls[0].targetTabId, 321);
+  assert.equal(startCalls[0].autoBatchLimit, 25);
 });
 
 test('popup cancelDownload sends batch-cancel message and clears local auto-scroll state', async () => {
@@ -351,6 +323,10 @@ test('popup cancelDownload sends batch-cancel message and clears local auto-scro
     isBatchingNow: true,
     activeAutoBatchSize: 42,
     autoScrollStatsTimer: 19,
+    async cancelBatchTask() {
+      runtimeCalls.push({ action: 'cancelCurrentBatch' });
+      return true;
+    },
     async toggleAutoScroll(enabled, options) {
       toggleCalls.push({ enabled, options });
     }
@@ -360,10 +336,9 @@ test('popup cancelDownload sends batch-cancel message and clears local auto-scro
 
   assert.deepEqual(runtimeCalls, [{ action: 'cancelCurrentBatch' }]);
   assert.equal(controller.isBatchingNow, false);
-  assert.equal(controller.activeAutoBatchSize, 0);
   assert.equal(controller.autoScrollStatsTimer, null);
   assert.deepEqual(clearedTimers, [19]);
-  assert.deepEqual(toggleCalls, [{ enabled: false, options: { resetBatchState: false } }]);
+  assert.deepEqual(toggleCalls, [{ enabled: false, options: undefined }]);
 });
 
 test('popup deselectAllImages clears the page session and resets batching state', async () => {
@@ -402,9 +377,6 @@ test('popup deselectAllImages clears the page session and resets batching state'
     tabMessages.map((entry) => entry.action),
     ['clearAllImages']
   );
-  assert.equal(controller.batchCount, 0);
-  assert.equal(controller.nextBatchStartIndex, 0);
-  assert.equal(controller.activeAutoBatchSize, 0);
   assert.equal(controller.isBatchingNow, false);
   assert.equal(updateImageCountsCalls, 1);
 });
@@ -433,6 +405,10 @@ test('sidebar cancelDownload sends batch-cancel message and clears local auto-sc
     isBatchingNow: true,
     activeAutoBatchSize: 17,
     autoScrollStatsTimer: 33,
+    async cancelBatchTask() {
+      runtimeCalls.push({ action: 'cancelCurrentBatch' });
+      return true;
+    },
     async toggleAutoScroll(enabled, options) {
       toggleCalls.push({ enabled, options });
     }
@@ -442,10 +418,9 @@ test('sidebar cancelDownload sends batch-cancel message and clears local auto-sc
 
   assert.deepEqual(runtimeCalls, [{ action: 'cancelCurrentBatch' }]);
   assert.equal(controller.isBatchingNow, false);
-  assert.equal(controller.activeAutoBatchSize, 0);
   assert.equal(controller.autoScrollStatsTimer, null);
   assert.deepEqual(clearedTimers, [33]);
-  assert.deepEqual(toggleCalls, [{ enabled: false, options: { resetBatchState: false } }]);
+  assert.deepEqual(toggleCalls, [{ enabled: false, options: undefined }]);
 });
 
 test('sidebar deselectAll clears the page session and resets batching state', async () => {
@@ -484,9 +459,6 @@ test('sidebar deselectAll clears the page session and resets batching state', as
     tabMessages.map((entry) => entry.action),
     ['clearAllImages']
   );
-  assert.equal(controller.batchCount, 0);
-  assert.equal(controller.nextBatchStartIndex, 0);
-  assert.equal(controller.activeAutoBatchSize, 0);
   assert.equal(controller.isBatchingNow, false);
   assert.equal(updateStatsCalls, 1);
 });
@@ -514,6 +486,9 @@ test('background generic cancel does not cancel an in-flight single-image downlo
     },
     tabs: {
       onUpdated: {
+        addListener() {}
+      },
+      onRemoved: {
         addListener() {}
       },
       async query() {
@@ -558,6 +533,10 @@ test('background generic cancel does not cancel an in-flight single-image downlo
         async remove() {}
       },
       local: {
+        async get() { return {}; },
+        async set() {}
+      },
+      session: {
         async get() { return {}; },
         async set() {}
       }

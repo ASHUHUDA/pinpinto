@@ -18,7 +18,8 @@ test('download batching helpers preserve auto batch limit and thresholds', async
   assert.equal(normalizeAutoBatchLimit(25), 25);
   assert.equal(normalizeAutoBatchLimit('25.9'), 25);
   assert.equal(normalizeAutoBatchLimit(0), 1);
-  assert.equal(normalizeAutoBatchLimit(1001), 1000);
+  assert.equal(normalizeAutoBatchLimit(101), 100);
+  assert.equal(normalizeAutoBatchLimit(1001), 100);
   assert.equal(getNextBatchThreshold(0), 100);
   assert.equal(getNextBatchThreshold(1), 200);
   assert.equal(shouldTriggerAutoBatch(99, 0, true), false);

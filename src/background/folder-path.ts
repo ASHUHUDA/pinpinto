@@ -15,14 +15,14 @@ export function generateFolderPath(
     date = new Date()
 ): string {
     if (imageData.folder) {
-        return `PinPinto Downloads/${imageData.folder}`;
+        return `${PINPINTO_DOWNLOAD_ROOT}/${imageData.folder}`;
     }
 
     const sanitize = (str: string) => str.replace(/[^a-z0-9\-_\.]/gi, '_').substring(0, 50);
     const dateStr = date.toISOString().split('T')[0];
     const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
-    let folderPath = 'PinPinto Downloads';
+    let folderPath = PINPINTO_DOWNLOAD_ROOT;
 
     switch (settings.folderOrganization || 'date') {
         case 'board':
@@ -74,3 +74,4 @@ export function extractDomainFromUrl(url?: string): string {
         return 'Unknown';
     }
 }
+import { PINPINTO_DOWNLOAD_ROOT } from './download-path';

@@ -3,15 +3,14 @@ import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, 
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
 import { normalizeAutoBatchLimit } from './shared/download-batching';
+import { BatchTaskClient } from './shared/batch-task-client';
+import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
 import {
     cancelDownload as cancelPopupDownload,
     clearAllImagesOnPage,
     deselectAllImages as deselectPopupImages,
-    discardImagesBeforeIndex,
     fallbackUpdateStats as fallbackPopupUpdateStats,
-    getAutoScrollStatus as getPopupAutoScrollStatus,
     getSettings as getPopupSettings,
-    getViewportAnchorIndex,
     hideProgress as hidePopupProgress,
     selectAllImages as selectAllPopupImages,
     showProgress as showPopupProgress,
@@ -45,13 +44,11 @@ class PinVaultProPopup {
     isAutoScrolling: boolean;
     autoScrollStatsTimer: number | null;
     statsUpdateTimer: number | null;
-    batchCount: number;
     isBatchingNow: boolean;
-    nextBatchStartIndex: number;
-    activeAutoBatchSize: number;
     language: SupportedLanguage;
     translations: typeof POPUP_STATUS_TRANSLATIONS;
     staticTranslations: typeof POPUP_STATIC_TRANSLATIONS;
+    batchTaskClient: BatchTaskClient;
 
     constructor() {
         this.selectedImages = new Set();
@@ -59,13 +56,11 @@ class PinVaultProPopup {
         this.isAutoScrolling = false;
         this.autoScrollStatsTimer = null;
         this.statsUpdateTimer = null;
-        this.batchCount = 0;
         this.isBatchingNow = false;
-        this.nextBatchStartIndex = 0;
-        this.activeAutoBatchSize = 0;
         this.language = DEFAULT_LANGUAGE;
         this.translations = POPUP_STATUS_TRANSLATIONS;
         this.staticTranslations = POPUP_STATIC_TRANSLATIONS;
+        this.batchTaskClient = new BatchTaskClient((snapshot) => this.applyBatchTaskSnapshot(snapshot));
 
         this.init();
     }
@@ -78,6 +73,7 @@ class PinVaultProPopup {
         this.updateLanguage();
         await this.checkPinterestConnection();
         this.setupPeriodicUpdates();
+        await this.batchTaskClient.restore();
     }
 
     async loadSettings() {
@@ -379,9 +375,6 @@ class PinVaultProPopup {
         return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
-    async getAutoScrollStatus(tabId: number) { return getPopupAutoScrollStatus(this, tabId); }
-    async getViewportAnchorIndex(tabId: number) { return getViewportAnchorIndex(this, tabId); }
-    async discardImagesBeforeIndex(tabId: number, startIndex: number) { return discardImagesBeforeIndex(this, tabId, startIndex); }
     async clearAllImagesOnPage(tabId: number) { return clearAllImagesOnPage(this, tabId); }
 
     async updateImageCounts() { return updatePopupImageCounts(this); }
@@ -403,7 +396,7 @@ class PinVaultProPopup {
 
     async selectAllImages() { return selectAllPopupImages(this); }
     async deselectAllImages() { return deselectPopupImages(this); }
-    async toggleAutoScroll(enabled: boolean, options: { resetBatchState?: boolean } = {}) { return togglePopupAutoScroll(this, enabled, options); }
+    async toggleAutoScroll(enabled: boolean) { return togglePopupAutoScroll(this, enabled); }
 
     stopAutoScroll() {
         this.toggleAutoScroll(false);
@@ -442,10 +435,23 @@ class PinVaultProPopup {
 
     async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}) { return startPopupDownload(this, options); }
     cancelDownload() { return cancelPopupDownload(this); }
+    async startBatchTask(request: Record<string, unknown>) { return this.batchTaskClient.start(request); }
+    async cancelBatchTask() { return this.batchTaskClient.cancel(); }
     showProgress() { return showPopupProgress(this); }
     hideProgress() { return hidePopupProgress(this); }
     updateProgress(progress: number, details: string) { return updatePopupProgress(this, progress, details); }
     async getSettings() { return getPopupSettings(); }
+
+    applyBatchTaskSnapshot(snapshot: BatchTaskSnapshot) {
+        this.showProgress();
+        this.updateProgress(snapshot.progress, snapshot.details);
+        this.isBatchingNow = !isTerminalBatchPhase(snapshot.phase);
+        if (isTerminalBatchPhase(snapshot.phase)) {
+            this.isAutoScrolling = false;
+            this.setAutoScrollUi(false);
+            void this.updateImageCounts();
+        }
+    }
 
     async changeTheme(theme: string) {
         this.applyTheme(theme);
@@ -643,56 +649,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
 chrome.runtime.onMessage.addListener((message) => {
     if (!popupInstance) return;
-
-    if (message.action === 'downloadProgress') {
-        popupInstance.updateProgress(message.progress, message.details);
-    } else if (message.action === 'downloadComplete') {
-        popupInstance.hideProgress();
-        popupInstance.updateImageCounts();
-
-        if (popupInstance.isBatchingNow) {
-            const completedBatchSize = popupInstance.activeAutoBatchSize
-                || (Array.isArray(message.results) ? message.results.length : 0);
-            popupInstance.nextBatchStartIndex += completedBatchSize;
-            popupInstance.activeAutoBatchSize = 0;
-            popupInstance.batchCount++;
-
-            (async () => {
-                const tab = await popupInstance.getActivePinterestTab();
-                if (!tab?.id) {
-                    popupInstance.isBatchingNow = false;
-                    return;
-                }
-
-                chrome.tabs.sendMessage(tab.id, { action: 'deselectAllImages' }).catch(() => {
-                    // ignore
-                });
-
-                const settings = await popupInstance.getSettings();
-                popupInstance.isBatchingNow = false;
-
-                if (settings.autoScroll === true) {
-                    setTimeout(() => {
-                        popupInstance.toggleAutoScroll(true, { resetBatchState: false });
-                    }, 1000);
-                }
-            })().catch((error) => console.error(error));
-        }
-    } else if (message.action === 'downloadError') {
-        const prefix = popupInstance.language === 'zh' ? '下载失败：' : 'Download failed: ';
-        popupInstance.updateProgress(100, `${prefix}${message.error}`);
-        popupInstance.isBatchingNow = false;
-        popupInstance.activeAutoBatchSize = 0;
-        alert(`${prefix}${message.error}`);
-    } else if (message.action === 'downloadCancelled') {
-        popupInstance.hideProgress();
-        popupInstance.isBatchingNow = false;
-        popupInstance.activeAutoBatchSize = 0;
-        popupInstance.isAutoScrolling = false;
-        popupInstance.setAutoScrollUi(false);
-        if (popupInstance.autoScrollStatsTimer) {
-            clearInterval(popupInstance.autoScrollStatsTimer);
-            popupInstance.autoScrollStatsTimer = null;
-        }
-    }
+    popupInstance.batchTaskClient.acceptMessage(message);
 });

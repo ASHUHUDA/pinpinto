@@ -1,6 +1,6 @@
 export const AUTO_BATCH_DOWNLOAD_LIMIT = 100;
 export const MIN_AUTO_BATCH_DOWNLOAD_LIMIT = 1;
-export const MAX_AUTO_BATCH_DOWNLOAD_LIMIT = 1000;
+export const MAX_AUTO_BATCH_DOWNLOAD_LIMIT = 100;
 
 export function normalizeAutoBatchLimit(
     value: unknown,

@@ -2,6 +2,7 @@
 console.log('PinPinto content script: Starting to load...');
 
 import { createOverlayControls as createImageOverlayControls } from './content/overlay-controls';
+import { AutoBatchSessionController, restoreAutoBatchSession } from './content/auto-batch-session';
 import { ContentSessionStore } from './content/session-store';
 import { PINPINTO_CONTENT_STYLE_ID, PINPINTO_CONTENT_STYLE_TEXT } from './content/styles';
 
@@ -27,6 +28,7 @@ if (window.pinVaultContentLoaded) {
         autoScrollStoppedAt: number | null;
         scanTimeout?: number;
         contextMenuImage?: HTMLImageElement | null;
+        autoBatchSession: AutoBatchSessionController;
 
         constructor() {
             this.session = new ContentSessionStore();
@@ -39,6 +41,17 @@ if (window.pinVaultContentLoaded) {
             this.maxScrollAttempts = 5;
             this.autoScrollStopReason = null;
             this.autoScrollStoppedAt = null;
+            this.autoBatchSession = new AutoBatchSessionController({
+                scanForImages: () => this.scanForImages(),
+                getTotalImages: () => this.session.imageOrder.length,
+                getImagesInRange: (startIndex, endIndex) => this.getImagesInRange(startIndex, endIndex),
+                getViewportAnchorIndex: () => this.getViewportAnchorIndex(),
+                discardImagesBeforeIndex: (startIndex) => this.discardImagesBeforeIndex(startIndex),
+                startAutoScroll: () => this.startAutoScroll(),
+                stopAutoScroll: () => this.stopAutoScroll('manual'),
+                getAutoScrollStopReason: () => this.autoScrollStopReason,
+                sendMessage: (message) => chrome.runtime.sendMessage(message)
+            });
 
             // Make sure we're available on window immediately
             window.pinVaultContent = this;
@@ -54,6 +67,7 @@ if (window.pinVaultContentLoaded) {
                 this.scanForImages();
                 this.setupMutationObserver();
                 this.setupContextMenu();
+                void restoreAutoBatchSession(this.autoBatchSession);
                 console.log('PinPinto content script initialized successfully');
             } catch (error) {
                 console.error('PinPinto content script initialization error:', error);
@@ -107,6 +121,33 @@ if (window.pinVaultContentLoaded) {
 
                         case 'stopAutoScroll':
                             this.stopAutoScroll();
+                            sendResponse({ success: true });
+                            break;
+
+                        case 'startAutoBatchSession':
+                            void this.autoBatchSession.start({
+                                jobId: request.jobId,
+                                limit: request.limit,
+                                settings: request.settings || {}
+                            }).then(() => sendResponse({ success: true }));
+                            break;
+
+                        case 'resumeAutoBatchSession':
+                            void this.autoBatchSession.resume({
+                                jobId: request.jobId,
+                                nextCursor: request.nextCursor,
+                                limit: request.limit,
+                                settings: request.settings || {}
+                            }).then(() => sendResponse({ success: true }));
+                            break;
+
+                        case 'finishAutoBatchSession':
+                            this.autoBatchSession.finish(request.jobId);
+                            sendResponse({ success: true });
+                            break;
+
+                        case 'cancelAutoBatchSession':
+                            this.autoBatchSession.cancel(request.jobId);
                             sendResponse({ success: true });
                             break;
 
@@ -256,7 +297,7 @@ if (window.pinVaultContentLoaded) {
                 container: overlayHost,
                 controls,
                 overlay: selectOverlay,
-                url: this.getHighQualityUrl(img),
+                url: this.getOriginalImageUrl(img),
                 title: this.extractImageTitle(container),
                 board: this.extractBoardName(),
                 domain: window.location.hostname,
@@ -383,7 +424,7 @@ if (window.pinVaultContentLoaded) {
         }
 
         getHighQualityUrl(img) {
-            let url = img.src || img.dataset.src || '';
+            let url = this.getOriginalImageUrl(img);
 
             // Convert to highest quality Pinterest URL
             // Pinterest URL pattern: https://i.pinimg.com/564x/...
@@ -396,6 +437,10 @@ if (window.pinVaultContentLoaded) {
             }
 
             return url;
+        }
+
+        getOriginalImageUrl(img: HTMLImageElement) {
+            return img.currentSrc || img.src || img.dataset.src || '';
         }
 
         extractImageTitle(container) {

@@ -55,14 +55,14 @@ test('background folder helpers preserve organization branches without date flak
   const { extractDomainFromUrl, generateFolderPath } = await loadTsModule('src/background/folder-path.ts');
   const date = new Date('2026-05-05T12:34:56.000Z');
 
-  assert.equal(generateFolderPath({ folder: 'Manual Folder' }, { folderOrganization: 'date' }, date), 'PinPinto Downloads/Manual Folder');
-  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'board' }, date), 'PinPinto Downloads/My_Board_');
-  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'date' }, date), 'PinPinto Downloads/2026-05-05');
-  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'month' }, date), 'PinPinto Downloads/2026-05');
-  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'board_date' }, date), 'PinPinto Downloads/My_Board_/2026-05-05');
-  assert.equal(generateFolderPath({ url: 'https://fi.pinterest.com/pin/123' }, { folderOrganization: 'domain' }, date), 'PinPinto Downloads/Pinterest_COM');
-  assert.equal(generateFolderPath({}, { folderOrganization: 'custom', customFolder: 'Custom Folder!' }, date), 'PinPinto Downloads/Custom_Folder_');
-  assert.equal(generateFolderPath({}, { folderOrganization: 'none' }, date), 'PinPinto Downloads');
+  assert.equal(generateFolderPath({ folder: 'Manual Folder' }, { folderOrganization: 'date' }, date), 'PinPinto/Manual Folder');
+  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'board' }, date), 'PinPinto/My_Board_');
+  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'date' }, date), 'PinPinto/2026-05-05');
+  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'month' }, date), 'PinPinto/2026-05');
+  assert.equal(generateFolderPath({ board: 'My Board!' }, { folderOrganization: 'board_date' }, date), 'PinPinto/My_Board_/2026-05-05');
+  assert.equal(generateFolderPath({ url: 'https://fi.pinterest.com/pin/123' }, { folderOrganization: 'domain' }, date), 'PinPinto/Pinterest_COM');
+  assert.equal(generateFolderPath({}, { folderOrganization: 'custom', customFolder: 'Custom Folder!' }, date), 'PinPinto/Custom_Folder_');
+  assert.equal(generateFolderPath({}, { folderOrganization: 'none' }, date), 'PinPinto');
   assert.equal(extractDomainFromUrl('not a url'), 'Unknown');
 });
 

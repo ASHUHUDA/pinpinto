@@ -34,16 +34,22 @@ test('multi-browser build keeps dist reserved for Chrome while staging Firefox e
   assert.match(buildBrowsersSource, /await fs\.rm\(FIREFOX_STAGING_DIR, \{ recursive: true, force: true \}\);/);
 });
 
+test('Firefox manifest uses a module background script and session-storage-compatible minimum version', async () => {
+  const manifestSource = await readWorkspaceFile('manifest.config.ts');
+
+  assert.match(manifestSource, /strict_min_version: '115\.0'/);
+  assert.match(manifestSource, /background: isFirefoxTarget[\s\S]*?scripts: \['src\/background\.ts'\],[\s\S]*?type: 'module'/);
+  assert.match(manifestSource, /service_worker: 'src\/background\.ts'/);
+});
+
 test('cancel flows target current batch instead of indiscriminately canceling all downloads', async () => {
-  const popupSource = await readWorkspaceFile('src/popup/download-actions.ts');
-  const sidebarSource = await readWorkspaceFile('src/sidebar/download-actions.ts');
+  const clientSource = await readWorkspaceFile('src/shared/batch-task-client.ts');
   const backgroundSource = await readWorkspaceFile('src/background.ts');
 
-  assert.match(popupSource, /chrome\.runtime\.sendMessage\(\{ action: 'cancelCurrentBatch' \}\);/);
-  assert.match(sidebarSource, /chrome\.runtime\.sendMessage\(\{ action: 'cancelCurrentBatch' \}\);/);
+  assert.match(clientSource, /action: 'cancelCurrentBatch',[\s\S]*?jobId: this\.currentJobId/);
   assert.match(
     backgroundSource,
-    /case 'cancelDownload':[\s\S]*?if \(typeof request\.downloadId === 'number'\) \{[\s\S]*?await this\.cancelDownload\(request\.downloadId\);[\s\S]*?\} else \{[\s\S]*?await this\.cancelCurrentBatch\(\);/
+    /case 'cancelDownload':[\s\S]*?if \(typeof request\.downloadId === 'number'\) \{[\s\S]*?await this\.cancelDownload\(request\.downloadId\);[\s\S]*?\} else \{[\s\S]*?await this\.batchCoordinator\.cancel\(request\.jobId\);/
   );
 });
 
@@ -87,25 +93,20 @@ test('cancel helpers shut down auto-scroll bookkeeping in both popup and sidebar
 
   assert.match(
     popupSource,
-    /if \(controller\.autoScrollStatsTimer\) \{[\s\S]*?clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;[\s\S]*?\}[\s\S]*?void controller\.toggleAutoScroll\(false, \{ resetBatchState: false \}\);/
+    /if \(controller\.autoScrollStatsTimer\) \{[\s\S]*?clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;[\s\S]*?\}[\s\S]*?void controller\.toggleAutoScroll\(false\);/
   );
   assert.match(
     sidebarSource,
-    /if \(controller\.autoScrollStatsTimer\) \{[\s\S]*?clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;[\s\S]*?\}[\s\S]*?void controller\.toggleAutoScroll\(false, \{ resetBatchState: false \}\);/
+    /if \(controller\.autoScrollStatsTimer\) \{[\s\S]*?clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;[\s\S]*?\}[\s\S]*?void controller\.toggleAutoScroll\(false\);/
   );
 });
 
 test('auto-batch startup anchors to the viewport before discarding historical images', async () => {
-  const popupSource = await readWorkspaceFile('src/popup/download-actions.ts');
-  const sidebarSource = await readWorkspaceFile('src/sidebar/download-actions.ts');
+  const sessionSource = await readWorkspaceFile('src/content/auto-batch-session.ts');
 
   assert.match(
-    popupSource,
-    /if \(shouldResetBatchState && settings\.autoBatchDownload === true\) \{[\s\S]*?const viewportAnchorIndex = await getViewportAnchorIndex\(controller, tab\.id\);[\s\S]*?await discardImagesBeforeIndex\(controller, tab\.id, viewportAnchorIndex\);[\s\S]*?await controller\.updateImageCounts\(\);/
-  );
-  assert.match(
-    sidebarSource,
-    /if \(shouldResetBatchState && settings\.autoBatchDownload === true\) \{[\s\S]*?const viewportAnchorIndex = await getViewportAnchorIndex\(controller, tab\.id\);[\s\S]*?await discardImagesBeforeIndex\(controller, tab\.id, viewportAnchorIndex\);[\s\S]*?await controller\.updateStats\(\);/
+    sessionSource,
+    /const anchorIndex = Math\.max\(0, this\.dependencies\.getViewportAnchorIndex\(\)\);[\s\S]*?this\.dependencies\.discardImagesBeforeIndex\(anchorIndex\);[\s\S]*?this\.dependencies\.startAutoScroll\(\);/
   );
 });
 
@@ -116,6 +117,13 @@ test('content clear still emits a zero-count session update for UI refresh', asy
     contentSource,
     /window\.dispatchEvent\(new CustomEvent\('pinvaultImagesUpdated', \{[\s\S]*?detail: \{ total: 0, new: 0 \}/
   );
+});
+
+test('content keeps the page image URL so background owns high-quality fallback selection', async () => {
+  const contentSource = await readWorkspaceFile('src/content.ts');
+
+  assert.match(contentSource, /url: this\.getOriginalImageUrl\(img\),/);
+  assert.doesNotMatch(contentSource, /url: this\.getHighQualityUrl\(img\),/);
 });
 
 test('main code files remain below the 700-line AGENTS threshold', async () => {

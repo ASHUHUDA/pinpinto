@@ -1,13 +1,13 @@
 export const PINPINTO_BATCH_CANCELLED = 'PINPINTO_BATCH_CANCELLED';
 
 export type BatchJobState = {
-    id: number;
+    id: string;
     cancelled: boolean;
     notified: boolean;
     activeDownloadIds: Set<number>;
 };
 
-export function createBatchJobState(id: number): BatchJobState {
+export function createBatchJobState(id: string): BatchJobState {
     return {
         id,
         cancelled: false,

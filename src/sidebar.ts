@@ -3,15 +3,14 @@ import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, 
 import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
 import { normalizeAutoBatchLimit } from './shared/download-batching';
+import { BatchTaskClient } from './shared/batch-task-client';
+import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
 import {
     cancelDownload as cancelSidebarDownload,
     clearAllImagesOnPage,
     deselectAll as deselectSidebarImages,
-    discardImagesBeforeIndex,
     fallbackUpdateStats as fallbackSidebarUpdateStats,
-    getAutoScrollStatus as getSidebarAutoScrollStatus,
     getSettings as getSidebarSettings,
-    getViewportAnchorIndex,
     hideProgress as hideSidebarProgress,
     selectAll as selectAllSidebarImages,
     showProgress as showSidebarProgress,
@@ -25,15 +24,14 @@ const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
 class PinVaultProSidebar {
     statsUpdateTimer: number | null = null;
     autoScrollStatsTimer: number | null = null;
-    batchCount: number = 0;
     isBatchingNow: boolean = false;
-    nextBatchStartIndex: number = 0;
-    activeAutoBatchSize: number = 0;
     language: SupportedLanguage = DEFAULT_LANGUAGE;
     translations: typeof SIDEBAR_STATUS_TRANSLATIONS = SIDEBAR_STATUS_TRANSLATIONS;
     staticTranslations: typeof SIDEBAR_STATIC_TRANSLATIONS = SIDEBAR_STATIC_TRANSLATIONS;
+    batchTaskClient: BatchTaskClient;
 
     constructor() {
+        this.batchTaskClient = new BatchTaskClient((snapshot) => this.applyBatchTaskSnapshot(snapshot));
         this.init().catch((error) => console.error(error));
     }
 
@@ -52,6 +50,7 @@ class PinVaultProSidebar {
         setTimeout(() => {
             this.updateStats();
         }, 1000);
+        await this.batchTaskClient.restore();
     }
 
     setupEventListeners() {
@@ -313,9 +312,6 @@ class PinVaultProSidebar {
         return typeof firstScript === 'string' && firstScript.length > 0 ? firstScript : null;
     }
 
-    async getAutoScrollStatus(tabId: number) { return getSidebarAutoScrollStatus(this, tabId); }
-    async getViewportAnchorIndex(tabId: number) { return getViewportAnchorIndex(this, tabId); }
-    async discardImagesBeforeIndex(tabId: number, startIndex: number) { return discardImagesBeforeIndex(this, tabId, startIndex); }
     async clearAllImagesOnPage(tabId: number) { return clearAllImagesOnPage(this, tabId); }
 
     updateStatsDisplay(total: number, selected: number) {
@@ -339,13 +335,15 @@ class PinVaultProSidebar {
 
     async selectAll() { return selectAllSidebarImages(this); }
     async deselectAll() { return deselectSidebarImages(this); }
-    async toggleAutoScroll(enabled: boolean, options: { resetBatchState?: boolean } = {}) { return toggleSidebarAutoScroll(this, enabled, options); }
+    async toggleAutoScroll(enabled: boolean) { return toggleSidebarAutoScroll(this, enabled); }
 
     async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}) { return startSidebarDownload(this, options); }
     showProgress() { return showSidebarProgress(this); }
     hideProgress() { return hideSidebarProgress(this); }
     updateProgress(progress: number, details: string) { return updateSidebarProgress(this, progress, details); }
     cancelDownload() { return cancelSidebarDownload(this); }
+    async startBatchTask(request: Record<string, unknown>) { return this.batchTaskClient.start(request); }
+    async cancelBatchTask() { return this.batchTaskClient.cancel(); }
 
     async loadSettings() {
         try {
@@ -394,61 +392,24 @@ class PinVaultProSidebar {
     }
 
     async getSettings() { return getSidebarSettings(); }
+
+    applyBatchTaskSnapshot(snapshot: BatchTaskSnapshot) {
+        this.showProgress();
+        this.updateProgress(snapshot.progress, snapshot.details);
+        this.isBatchingNow = !isTerminalBatchPhase(snapshot.phase);
+        if (isTerminalBatchPhase(snapshot.phase)) {
+            const autoScrollToggle = document.getElementById('autoScrollToggle') as HTMLInputElement | null;
+            if (autoScrollToggle) autoScrollToggle.checked = false;
+            void this.updateStats();
+        }
+    }
 }
 
 let sidebar: PinVaultProSidebar;
 
 chrome.runtime.onMessage.addListener((message) => {
     if (!sidebar) return;
-
-    if (message.action === 'downloadProgress') {
-        sidebar.updateProgress(message.progress, message.details);
-    } else if (message.action === 'downloadComplete') {
-        sidebar.hideProgress();
-        sidebar.updateStats();
-
-        if (sidebar.isBatchingNow) {
-            const completedBatchSize = sidebar.activeAutoBatchSize
-                || (Array.isArray(message.results) ? message.results.length : 0);
-            sidebar.nextBatchStartIndex += completedBatchSize;
-            sidebar.activeAutoBatchSize = 0;
-            sidebar.batchCount++;
-
-            (async () => {
-                const tab = await sidebar.resolveTargetTab();
-                if (!tab?.id) {
-                    sidebar.isBatchingNow = false;
-                    return;
-                }
-
-                chrome.tabs.sendMessage(tab.id, { action: 'deselectAllImages' }).catch(() => {
-                    // ignore
-                });
-
-                const settings = await sidebar.getSettings();
-                sidebar.isBatchingNow = false;
-
-                if (settings.autoScroll === true) {
-                    setTimeout(() => {
-                        sidebar.toggleAutoScroll(true, { resetBatchState: false });
-                    }, 1000);
-                }
-            })().catch((error) => console.error(error));
-        }
-    } else if (message.action === 'downloadError') {
-        sidebar.updateProgress(100, `${sidebar.t('alert.downloadFailed')} ${message.error}`);
-        sidebar.isBatchingNow = false;
-        sidebar.activeAutoBatchSize = 0;
-        alert(`${sidebar.t('alert.downloadFailed')} ${message.error}`);
-    } else if (message.action === 'downloadCancelled') {
-        sidebar.hideProgress();
-        sidebar.isBatchingNow = false;
-        sidebar.activeAutoBatchSize = 0;
-        if (sidebar.autoScrollStatsTimer) {
-            clearInterval(sidebar.autoScrollStatsTimer);
-            sidebar.autoScrollStatsTimer = null;
-        }
-    }
+    sidebar.batchTaskClient.acceptMessage(message);
 });
 
 if (document.readyState === 'loading') {

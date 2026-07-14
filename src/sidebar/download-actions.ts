@@ -1,10 +1,7 @@
-import { getAutoBatchPlan, normalizeAutoBatchLimit } from '../shared/download-batching';
+import { normalizeAutoBatchLimit } from '../shared/download-batching';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from '../shared/download-settings';
 
 type SidebarDownloadController = {
-    batchCount: number;
-    nextBatchStartIndex: number;
-    activeAutoBatchSize: number;
     isBatchingNow: boolean;
     autoScrollStatsTimer: number | null;
     resolveTargetTab: () => Promise<chrome.tabs.Tab | null>;
@@ -13,37 +10,11 @@ type SidebarDownloadController = {
     updateStats: () => Promise<void>;
     saveSetting: (key: string, value: unknown) => Promise<void>;
     startDownload: (options?: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number }) => Promise<boolean>;
-    toggleAutoScroll: (enabled: boolean, options?: { resetBatchState?: boolean }) => Promise<void>;
+    toggleAutoScroll: (enabled: boolean) => Promise<void>;
+    startBatchTask: (request: Record<string, unknown>) => Promise<{ accepted: boolean; jobId: string; reason?: string }>;
+    cancelBatchTask: () => Promise<boolean>;
     t: (key: string) => string;
 };
-
-export async function getAutoScrollStatus(controller: SidebarDownloadController, tabId: number) {
-    try {
-        return await chrome.tabs.sendMessage(tabId, { action: 'getAutoScrollStatus' });
-    } catch {
-        return null;
-    }
-}
-
-export async function getViewportAnchorIndex(controller: SidebarDownloadController, tabId: number) {
-    try {
-        const response = await chrome.tabs.sendMessage(tabId, { action: 'getViewportAnchor' });
-        return typeof response?.anchorIndex === 'number' ? response.anchorIndex : 0;
-    } catch {
-        return 0;
-    }
-}
-
-export async function discardImagesBeforeIndex(controller: SidebarDownloadController, tabId: number, startIndex: number) {
-    try {
-        await chrome.tabs.sendMessage(tabId, {
-            action: 'discardImagesBeforeIndex',
-            startIndex
-        });
-    } catch {
-        // ignore and continue with best effort
-    }
-}
 
 export async function clearAllImagesOnPage(controller: SidebarDownloadController, tabId: number) {
     try {
@@ -100,9 +71,6 @@ export async function deselectAll(controller: SidebarDownloadController) {
 
         await controller.ensureContentScriptInjected(tab.id);
         await clearAllImagesOnPage(controller, tab.id);
-        controller.batchCount = 0;
-        controller.nextBatchStartIndex = 0;
-        controller.activeAutoBatchSize = 0;
         controller.isBatchingNow = false;
         controller.updateStats();
     } catch (error) {
@@ -112,10 +80,8 @@ export async function deselectAll(controller: SidebarDownloadController) {
 
 export async function toggleAutoScroll(
     controller: SidebarDownloadController,
-    enabled: boolean,
-    options: { resetBatchState?: boolean } = {}
+    enabled: boolean
 ) {
-    const shouldResetBatchState = options.resetBatchState !== false;
     try {
         const tab = await controller.resolveTargetTab();
         if (!tab?.id || !tab.url) return;
@@ -124,16 +90,12 @@ export async function toggleAutoScroll(
         const settings = await getSettings();
 
         if (enabled) {
-            if (shouldResetBatchState) {
-                controller.batchCount = 0;
-                controller.nextBatchStartIndex = 0;
-                controller.activeAutoBatchSize = 0;
-            }
-
-            if (shouldResetBatchState && settings.autoBatchDownload === true) {
-                const viewportAnchorIndex = await getViewportAnchorIndex(controller, tab.id);
-                await discardImagesBeforeIndex(controller, tab.id, viewportAnchorIndex);
-                await controller.updateStats();
+            if (settings.autoBatchDownload === true) {
+                controller.isBatchingNow = true;
+                const started = await controller.startDownload({ autoBatchMode: true });
+                if (!started) controller.isBatchingNow = false;
+                await controller.saveSetting('autoScroll', started);
+                return;
             }
 
             await chrome.tabs.sendMessage(tab.id, { action: 'startAutoScroll' });
@@ -153,40 +115,11 @@ export async function toggleAutoScroll(
                 await controller.ensureContentScriptInjected(targetTab.id);
                 await controller.updateStats();
 
-                const currentSettings = await getSettings();
-                const total = parseInt(document.getElementById('totalImages')?.textContent || '0', 10);
-                const autoScrollStatus = await getAutoScrollStatus(controller, targetTab.id);
-                const autoBatchLimit = normalizeAutoBatchLimit(currentSettings.autoBatchLimit);
-                const batchPlan = getAutoBatchPlan(total, controller.nextBatchStartIndex, currentSettings.autoBatchDownload === true, {
-                    limit: autoBatchLimit,
-                    autoScrollExhausted: autoScrollStatus?.stopReason === 'exhausted'
-                });
-                if (!batchPlan.shouldStart) {
-                    return;
-                }
-
-                controller.isBatchingNow = true;
-
-                try {
-                    await chrome.tabs.sendMessage(targetTab.id, { action: 'stopAutoScroll' });
-                    setTimeout(async () => {
-                        const started = await controller.startDownload({
-                            autoBatchMode: true,
-                            batchStartIndex: batchPlan.startIndex,
-                            batchEndIndex: batchPlan.endIndex
-                        });
-                        if (!started) {
-                            controller.isBatchingNow = false;
-                            controller.activeAutoBatchSize = 0;
-                        }
-                    }, 500);
-                } catch (error) {
-                    console.error('Error during auto-batch:', error);
-                    controller.isBatchingNow = false;
-                    controller.activeAutoBatchSize = 0;
-                }
             }, 1000);
         } else {
+            if (settings.autoBatchDownload === true) {
+                await controller.cancelBatchTask();
+            }
             await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
 
             if (controller.autoScrollStatsTimer) {
@@ -195,7 +128,6 @@ export async function toggleAutoScroll(
             }
 
             controller.isBatchingNow = false;
-            controller.activeAutoBatchSize = 0;
             setTimeout(() => controller.updateStats(), 500);
         }
 
@@ -221,121 +153,83 @@ export async function startDownload(
 
         await controller.updateStats();
 
-        let selectedImages: any[] = [];
         const settings = await getSettings();
         if (autoBatchMode) {
-            const batchStartIndex = typeof options.batchStartIndex === 'number'
-                ? options.batchStartIndex
-                : controller.nextBatchStartIndex;
-            const batchEndIndex = typeof options.batchEndIndex === 'number'
-                ? options.batchEndIndex
-                : batchStartIndex + normalizeAutoBatchLimit(settings.autoBatchLimit);
-
-            try {
-                await controller.ensureContentScriptInjected(tab.id);
-                const response = await chrome.tabs.sendMessage(tab.id, {
-                    action: 'getImagesInRange',
-                    startIndex: batchStartIndex,
-                    endIndex: batchEndIndex
-                });
-
-                if (response?.images?.length) {
-                    selectedImages = response.images;
-                }
-            } catch {
-                // ignore and continue with empty result
-            }
-
-            if (selectedImages.length === 0) {
-                controller.activeAutoBatchSize = 0;
+            showProgress(controller);
+            const response = await controller.startBatchTask({
+                mode: 'auto',
+                targetTabId: tab.id,
+                settings,
+                autoBatchLimit: normalizeAutoBatchLimit(settings.autoBatchLimit)
+            });
+            if (!response.accepted) {
+                updateProgress(controller, 100, 'Another batch task is already running.');
+                controller.isBatchingNow = false;
                 return false;
             }
+            return true;
+        }
 
-            controller.activeAutoBatchSize = selectedImages.length;
-        } else {
-            try {
-                await controller.ensureContentScriptInjected(tab.id);
-                const response = await chrome.tabs.sendMessage(tab.id, {
-                    action: 'getSelectedImages',
-                    settings
-                });
+        let selectedImages: any[] = [];
+        try {
+            await controller.ensureContentScriptInjected(tab.id);
+            const response = await chrome.tabs.sendMessage(tab.id, {
+                action: 'getSelectedImages',
+                settings
+            });
 
-                if (response?.images?.length) {
-                    selectedImages = response.images;
-                }
-            } catch {
-                // ignore and use fallback
+            if (response?.images?.length) {
+                selectedImages = response.images;
             }
+        } catch {
+            // ignore and use fallback
+        }
 
-            if (selectedImages.length === 0) {
-                const results = await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: () => {
-                        const selected = document.querySelectorAll('img[data-pinvault-selected="true"]');
-                        const imageData: Array<{ id: string; url: string; title: string; board: string; domain: string; originalFilename: string | undefined }> = [];
+        if (selectedImages.length === 0) {
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    const selected = document.querySelectorAll('img[data-pinvault-selected="true"]');
+                    const imageData: Array<{ id: string; url: string; title: string; board: string; domain: string; originalFilename: string | undefined }> = [];
 
-                        selected.forEach((img, index) => {
-                            const image = img as HTMLImageElement;
-                            if (image.src && image.src.includes('pinimg.com')) {
-                                imageData.push({
-                                    id: `img_${Date.now()}_${index}`,
-                                    url: image.src,
-                                    title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
-                                    board: document.title || 'Pinterest',
-                                    domain: window.location.hostname,
-                                    originalFilename: image.src.split('/').pop()
-                                });
-                            }
-                        });
+                    selected.forEach((img, index) => {
+                        const image = img as HTMLImageElement;
+                        if (image.src && image.src.includes('pinimg.com')) {
+                            imageData.push({
+                                id: `img_${Date.now()}_${index}`,
+                                url: image.src,
+                                title: image.alt || image.title || `Pinterest 图片 ${index + 1}`,
+                                board: document.title || 'Pinterest',
+                                domain: window.location.hostname,
+                                originalFilename: image.src.split('/').pop()
+                            });
+                        }
+                    });
 
-                        return imageData;
-                    }
-                });
-
-                if (results?.[0]?.result?.length) {
-                    selectedImages = results[0].result;
-                } else {
-                    alert(controller.t('alert.noImages'));
-                    return false;
+                    return imageData;
                 }
+            });
+
+            if (results?.[0]?.result?.length) {
+                selectedImages = results[0].result;
+            } else {
+                alert(controller.t('alert.noImages'));
+                return false;
             }
         }
 
         showProgress(controller);
 
-        chrome.runtime.sendMessage(
-            {
-                action: 'downloadImages',
-                images: selectedImages,
-                settings
-            },
-            (response) => {
-                if (chrome.runtime.lastError) {
-                    const errorText = `${controller.t('alert.downloadStartFailed')} ${chrome.runtime.lastError.message}`;
-                    updateProgress(controller, 100, errorText);
-                    if (!autoBatchMode) {
-                        alert(errorText);
-                        hideProgress(controller);
-                    } else {
-                        controller.isBatchingNow = false;
-                        controller.activeAutoBatchSize = 0;
-                    }
-                    return;
-                }
-
-                if (!response?.success) {
-                    const errorText = `${controller.t('alert.downloadFailed')} ${response?.error || 'Unknown error'}`;
-                    updateProgress(controller, 100, errorText);
-                    if (!autoBatchMode) {
-                        alert(errorText);
-                        hideProgress(controller);
-                    } else {
-                        controller.isBatchingNow = false;
-                        controller.activeAutoBatchSize = 0;
-                    }
-                }
-            }
-        );
+        const response = await controller.startBatchTask({
+            mode: 'manual',
+            targetTabId: tab.id,
+            images: selectedImages,
+            settings
+        });
+        if (!response.accepted) {
+            updateProgress(controller, 100, 'Another batch task is already running.');
+            return false;
+        }
         return true;
     } catch (error) {
         console.error('Error starting download:', error);
@@ -346,7 +240,6 @@ export async function startDownload(
             hideProgress(controller);
         } else {
             controller.isBatchingNow = false;
-            controller.activeAutoBatchSize = 0;
         }
         return false;
     }
@@ -380,14 +273,13 @@ export function updateProgress(controller: SidebarDownloadController, progress: 
 }
 
 export function cancelDownload(controller: SidebarDownloadController) {
-    chrome.runtime.sendMessage({ action: 'cancelCurrentBatch' });
+    void controller.cancelBatchTask();
     controller.isBatchingNow = false;
-    controller.activeAutoBatchSize = 0;
     if (controller.autoScrollStatsTimer) {
         clearInterval(controller.autoScrollStatsTimer);
         controller.autoScrollStatsTimer = null;
     }
-    void controller.toggleAutoScroll(false, { resetBatchState: false });
+    void controller.toggleAutoScroll(false);
     hideProgress(controller);
 }
 

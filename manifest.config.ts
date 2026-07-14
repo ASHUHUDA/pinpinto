@@ -23,7 +23,7 @@ const browserUiSection = isFirefoxTarget
       browser_specific_settings: {
         gecko: {
           id: 'pinpinto@ashuhuda.dev',
-          strict_min_version: '109.0'
+          strict_min_version: '115.0'
         }
       }
     }
@@ -36,14 +36,19 @@ const browserUiSection = isFirefoxTarget
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest Downloader',
-  version: '1.5.6',
+  version: '1.5.7',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions,
   host_permissions: [...PINTEREST_MATCH_PATTERNS, ...PINIMG_MATCH_PATTERNS],
-  background: {
-    service_worker: 'src/background.ts',
-    type: 'module'
-  },
+  background: isFirefoxTarget
+    ? {
+        scripts: ['src/background.ts'],
+        type: 'module'
+      }
+    : {
+        service_worker: 'src/background.ts',
+        type: 'module'
+      },
   content_scripts: [
     {
       matches: PINTEREST_MATCH_PATTERNS,
@@ -74,4 +79,3 @@ export default defineManifest({
     }
   ]
 })
-
