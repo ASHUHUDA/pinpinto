@@ -98,18 +98,16 @@ test('auto-batch limit stays in a separate manual-input area', async () => {
   }
 });
 
-test('cancel helpers shut down auto-scroll bookkeeping in both popup and sidebar', async () => {
+test('cancel helpers shut down and persist-disabled auto options in both popup and sidebar', async () => {
   const popupSource = await readWorkspaceFile('src/popup/download-actions.ts');
   const sidebarSource = await readWorkspaceFile('src/sidebar/download-actions.ts');
 
-  assert.match(
-    popupSource,
-    /if \(controller\.autoScrollStatsTimer\) \{[\s\S]*?clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;[\s\S]*?\}[\s\S]*?void controller\.toggleAutoScroll\(false\);/
-  );
-  assert.match(
-    sidebarSource,
-    /if \(controller\.autoScrollStatsTimer\) \{[\s\S]*?clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;[\s\S]*?\}[\s\S]*?void controller\.toggleAutoScroll\(false\);/
-  );
+  for (const source of [popupSource, sidebarSource]) {
+    assert.match(source, /clearInterval\(controller\.autoScrollStatsTimer\);[\s\S]*?controller\.autoScrollStatsTimer = null;/);
+    assert.match(source, /controller\.saveSetting\('autoScroll', false\)/);
+    assert.match(source, /controller\.saveSetting\('autoBatchDownload', false\)/);
+    assert.match(source, /setAutoOptionsDisabled\(controller\);[\s\S]*?void saveAutoOptionsDisabled\(controller\);/);
+  }
 });
 
 test('auto-batch startup anchors to the viewport before discarding historical images', async () => {

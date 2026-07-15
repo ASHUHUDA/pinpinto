@@ -16,6 +16,32 @@ type SidebarDownloadController = {
     t: (key: string) => string;
 };
 
+async function saveAutoOptionsDisabled(controller: SidebarDownloadController) {
+    await Promise.all([
+        controller.saveSetting('autoScroll', false),
+        controller.saveSetting('autoBatchDownload', false)
+    ]);
+}
+
+function setToggleChecked(id: string, checked: boolean) {
+    const toggle = document.getElementById(id) as HTMLInputElement | null;
+    if (toggle) toggle.checked = checked;
+}
+
+function clearAutoScrollTimer(controller: SidebarDownloadController) {
+    if (controller.autoScrollStatsTimer) {
+        clearInterval(controller.autoScrollStatsTimer);
+        controller.autoScrollStatsTimer = null;
+    }
+}
+
+function setAutoOptionsDisabled(controller: SidebarDownloadController) {
+    controller.isBatchingNow = false;
+    clearAutoScrollTimer(controller);
+    setToggleChecked('autoScrollToggle', false);
+    setToggleChecked('autoBatchToggle', false);
+}
+
 export async function clearAllImagesOnPage(controller: SidebarDownloadController, tabId: number) {
     try {
         await chrome.tabs.sendMessage(tabId, { action: 'clearAllImages' });
@@ -83,53 +109,53 @@ export async function toggleAutoScroll(
     enabled: boolean
 ) {
     try {
+        const settings = await getSettings();
+
+        if (!enabled) {
+            const shouldCancelBatchTask = controller.isBatchingNow || settings.autoBatchDownload === true;
+            if (shouldCancelBatchTask) {
+                await controller.cancelBatchTask();
+            }
+
+            const tab = await controller.resolveTargetTab();
+            if (tab?.id && tab.url) {
+                await controller.ensureContentScriptInjected(tab.id);
+                await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
+            }
+
+            setAutoOptionsDisabled(controller);
+            await saveAutoOptionsDisabled(controller);
+            setTimeout(() => controller.updateStats(), 500);
+            return;
+        }
+
         const tab = await controller.resolveTargetTab();
         if (!tab?.id || !tab.url) return;
 
         await controller.ensureContentScriptInjected(tab.id);
-        const settings = await getSettings();
 
-        if (enabled) {
-            if (settings.autoBatchDownload === true) {
-                controller.isBatchingNow = true;
-                const started = await controller.startDownload({ autoBatchMode: true });
-                if (!started) controller.isBatchingNow = false;
-                await controller.saveSetting('autoScroll', started);
-                return;
-            }
-
-            await chrome.tabs.sendMessage(tab.id, { action: 'startAutoScroll' });
-
-            if (controller.autoScrollStatsTimer) {
-                clearInterval(controller.autoScrollStatsTimer);
-            }
-
-            controller.isBatchingNow = false;
-
-            controller.autoScrollStatsTimer = window.setInterval(async () => {
-                if (controller.isBatchingNow) return;
-
-                const targetTab = await controller.resolveTargetTab();
-                if (!targetTab?.id) return;
-
-                await controller.ensureContentScriptInjected(targetTab.id);
-                await controller.updateStats();
-
-            }, 1000);
-        } else {
-            if (settings.autoBatchDownload === true) {
-                await controller.cancelBatchTask();
-            }
-            await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
-
-            if (controller.autoScrollStatsTimer) {
-                clearInterval(controller.autoScrollStatsTimer);
-                controller.autoScrollStatsTimer = null;
-            }
-
-            controller.isBatchingNow = false;
-            setTimeout(() => controller.updateStats(), 500);
+        if (settings.autoBatchDownload === true) {
+            controller.isBatchingNow = true;
+            const started = await controller.startDownload({ autoBatchMode: true });
+            if (!started) controller.isBatchingNow = false;
+            await controller.saveSetting('autoScroll', started);
+            return;
         }
+
+        await chrome.tabs.sendMessage(tab.id, { action: 'startAutoScroll' });
+        clearAutoScrollTimer(controller);
+        controller.isBatchingNow = false;
+
+        controller.autoScrollStatsTimer = window.setInterval(async () => {
+            if (controller.isBatchingNow) return;
+
+            const targetTab = await controller.resolveTargetTab();
+            if (!targetTab?.id) return;
+
+            await controller.ensureContentScriptInjected(targetTab.id);
+            await controller.updateStats();
+
+        }, 1000);
 
         await controller.saveSetting('autoScroll', enabled);
     } catch (error) {
@@ -280,12 +306,8 @@ export function updateProgress(controller: SidebarDownloadController, progress: 
 
 export function cancelDownload(controller: SidebarDownloadController) {
     void controller.cancelBatchTask();
-    controller.isBatchingNow = false;
-    if (controller.autoScrollStatsTimer) {
-        clearInterval(controller.autoScrollStatsTimer);
-        controller.autoScrollStatsTimer = null;
-    }
-    void controller.toggleAutoScroll(false);
+    setAutoOptionsDisabled(controller);
+    void saveAutoOptionsDisabled(controller);
     hideProgress(controller);
 }
 

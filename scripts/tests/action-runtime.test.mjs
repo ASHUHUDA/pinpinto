@@ -299,8 +299,10 @@ test('sidebar auto-batch uses the configured image limit', async () => {
   assert.equal(startCalls[0].autoBatchLimit, 25);
 });
 
-test('popup cancelDownload sends batch-cancel message and clears local auto-scroll state', async () => {
+test('popup cancelDownload sends batch-cancel message and clears local auto options', async () => {
   installMinimalDom();
+  document.getElementById('autoScrollToggle').checked = true;
+  document.getElementById('autoBatchToggle').checked = true;
 
   const runtimeCalls = [];
   globalThis.chrome = {
@@ -318,17 +320,24 @@ test('popup cancelDownload sends batch-cancel message and clears local auto-scro
 
   const popupActions = await loadTsModule('src/popup/download-actions.ts');
 
-  const toggleCalls = [];
+  const savedSettings = [];
+  const autoScrollUiCalls = [];
   const controller = {
+    language: 'zh',
     isBatchingNow: true,
+    isAutoScrolling: true,
     activeAutoBatchSize: 42,
     autoScrollStatsTimer: 19,
+    async saveSetting(key, value) {
+      savedSettings.push([key, value]);
+    },
+    setAutoScrollUi(enabled) {
+      autoScrollUiCalls.push(enabled);
+      document.getElementById('autoScrollToggle').checked = enabled;
+    },
     async cancelBatchTask() {
       runtimeCalls.push({ action: 'cancelCurrentBatch' });
       return true;
-    },
-    async toggleAutoScroll(enabled, options) {
-      toggleCalls.push({ enabled, options });
     }
   };
 
@@ -336,9 +345,16 @@ test('popup cancelDownload sends batch-cancel message and clears local auto-scro
 
   assert.deepEqual(runtimeCalls, [{ action: 'cancelCurrentBatch' }]);
   assert.equal(controller.isBatchingNow, false);
+  assert.equal(controller.isAutoScrolling, false);
   assert.equal(controller.autoScrollStatsTimer, null);
   assert.deepEqual(clearedTimers, [19]);
-  assert.deepEqual(toggleCalls, [{ enabled: false, options: undefined }]);
+  assert.deepEqual(autoScrollUiCalls, [false]);
+  assert.equal(document.getElementById('autoScrollToggle').checked, false);
+  assert.equal(document.getElementById('autoBatchToggle').checked, false);
+  assert.deepEqual(savedSettings, [
+    ['autoScroll', false],
+    ['autoBatchDownload', false]
+  ]);
 });
 
 test('popup deselectAllImages clears the page session and resets batching state', async () => {
@@ -381,8 +397,10 @@ test('popup deselectAllImages clears the page session and resets batching state'
   assert.equal(updateImageCountsCalls, 1);
 });
 
-test('sidebar cancelDownload sends batch-cancel message and clears local auto-scroll state', async () => {
+test('sidebar cancelDownload sends batch-cancel message and clears local auto options', async () => {
   installMinimalDom();
+  document.getElementById('autoScrollToggle').checked = true;
+  document.getElementById('autoBatchToggle').checked = true;
 
   const runtimeCalls = [];
   globalThis.chrome = {
@@ -400,17 +418,17 @@ test('sidebar cancelDownload sends batch-cancel message and clears local auto-sc
 
   const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
 
-  const toggleCalls = [];
+  const savedSettings = [];
   const controller = {
     isBatchingNow: true,
     activeAutoBatchSize: 17,
     autoScrollStatsTimer: 33,
+    async saveSetting(key, value) {
+      savedSettings.push([key, value]);
+    },
     async cancelBatchTask() {
       runtimeCalls.push({ action: 'cancelCurrentBatch' });
       return true;
-    },
-    async toggleAutoScroll(enabled, options) {
-      toggleCalls.push({ enabled, options });
     }
   };
 
@@ -420,7 +438,12 @@ test('sidebar cancelDownload sends batch-cancel message and clears local auto-sc
   assert.equal(controller.isBatchingNow, false);
   assert.equal(controller.autoScrollStatsTimer, null);
   assert.deepEqual(clearedTimers, [33]);
-  assert.deepEqual(toggleCalls, [{ enabled: false, options: undefined }]);
+  assert.equal(document.getElementById('autoScrollToggle').checked, false);
+  assert.equal(document.getElementById('autoBatchToggle').checked, false);
+  assert.deepEqual(savedSettings, [
+    ['autoScroll', false],
+    ['autoBatchDownload', false]
+  ]);
 });
 
 test('sidebar deselectAll clears the page session and resets batching state', async () => {

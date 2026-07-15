@@ -128,6 +128,8 @@ class PinVaultProPopup {
                 this.setAutoScrollUi(true);
                 await this.saveSetting('autoScroll', true);
                 await this.toggleAutoScroll(true);
+            } else {
+                await this.toggleAutoScroll(false);
             }
         });
         document.getElementById('autoBatchLimit')?.addEventListener('change', (e) => {
@@ -368,6 +370,11 @@ class PinVaultProPopup {
         }
     }
 
+    setAutoBatchUi(enabled: boolean) {
+        const toggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
+        if (toggle) toggle.checked = enabled;
+    }
+
     setVersionBadge() {
         const version = chrome.runtime.getManifest().version;
         document.querySelectorAll<HTMLElement>('.badge-version').forEach((badge) => {
@@ -402,6 +409,9 @@ class PinVaultProPopup {
         if (isTerminalBatchPhase(snapshot.phase)) {
             this.isAutoScrolling = false;
             this.setAutoScrollUi(false);
+            this.setAutoBatchUi(false);
+            void this.saveSetting('autoScroll', false);
+            void this.saveSetting('autoBatchDownload', false);
             void this.updateImageCounts();
         }
     }

@@ -90,13 +90,11 @@ class PinVaultProSidebar {
             await this.saveSetting('autoBatchDownload', checked);
 
             if (checked) {
-                const autoScrollToggle = document.getElementById('autoScrollToggle') as HTMLInputElement | null;
-                if (autoScrollToggle) {
-                    autoScrollToggle.checked = true;
-                }
-
+                this.setAutoScrollUi(true);
                 await this.saveSetting('autoScroll', true);
                 await this.toggleAutoScroll(true);
+            } else {
+                await this.toggleAutoScroll(false);
             }
         });
         document.getElementById('autoBatchLimit')?.addEventListener('change', (e) => {
@@ -391,6 +389,16 @@ class PinVaultProSidebar {
         }
     }
 
+    setAutoScrollUi(enabled: boolean) {
+        const toggle = document.getElementById('autoScrollToggle') as HTMLInputElement | null;
+        if (toggle) toggle.checked = enabled;
+    }
+
+    setAutoBatchUi(enabled: boolean) {
+        const toggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
+        if (toggle) toggle.checked = enabled;
+    }
+
     async getSettings() { return getSidebarSettings(); }
 
     applyBatchTaskSnapshot(snapshot: BatchTaskSnapshot) {
@@ -398,8 +406,10 @@ class PinVaultProSidebar {
         this.updateProgress(snapshot.progress, snapshot.details);
         this.isBatchingNow = !isTerminalBatchPhase(snapshot.phase);
         if (isTerminalBatchPhase(snapshot.phase)) {
-            const autoScrollToggle = document.getElementById('autoScrollToggle') as HTMLInputElement | null;
-            if (autoScrollToggle) autoScrollToggle.checked = false;
+            this.setAutoScrollUi(false);
+            this.setAutoBatchUi(false);
+            void this.saveSetting('autoScroll', false);
+            void this.saveSetting('autoBatchDownload', false);
             void this.updateStats();
         }
     }

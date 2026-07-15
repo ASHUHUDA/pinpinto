@@ -19,6 +19,33 @@ type PopupDownloadController = {
     cancelBatchTask: () => Promise<boolean>;
 };
 
+async function saveAutoOptionsDisabled(controller: PopupDownloadController) {
+    await Promise.all([
+        controller.saveSetting('autoScroll', false),
+        controller.saveSetting('autoBatchDownload', false)
+    ]);
+}
+
+function setAutoBatchUi(enabled: boolean) {
+    const toggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
+    if (toggle) toggle.checked = enabled;
+}
+
+function clearAutoScrollTimer(controller: PopupDownloadController) {
+    if (controller.autoScrollStatsTimer) {
+        clearInterval(controller.autoScrollStatsTimer);
+        controller.autoScrollStatsTimer = null;
+    }
+}
+
+function setAutoOptionsDisabled(controller: PopupDownloadController) {
+    controller.isAutoScrolling = false;
+    controller.isBatchingNow = false;
+    clearAutoScrollTimer(controller);
+    controller.setAutoScrollUi(false);
+    setAutoBatchUi(false);
+}
+
 export async function clearAllImagesOnPage(controller: PopupDownloadController, tabId: number) {
     try {
         await chrome.tabs.sendMessage(tabId, { action: 'clearAllImages' });
@@ -117,58 +144,57 @@ export async function toggleAutoScroll(
     enabled: boolean
 ) {
     try {
+        const settings = await getSettings();
+
+        if (!enabled) {
+            const shouldCancelBatchTask = controller.isBatchingNow || settings.autoBatchDownload === true;
+            if (shouldCancelBatchTask) {
+                await controller.cancelBatchTask();
+            }
+
+            const tab = await controller.getActivePinterestTab();
+            if (tab?.id) {
+                await controller.ensureContentScriptInjected(tab.id);
+                await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
+            }
+
+            setAutoOptionsDisabled(controller);
+            await saveAutoOptionsDisabled(controller);
+            setTimeout(() => controller.updateImageCounts(), 500);
+            return;
+        }
+
         const tab = await controller.getActivePinterestTab();
         if (!tab?.id) return;
 
         await controller.ensureContentScriptInjected(tab.id);
-        const settings = await getSettings();
 
-        if (enabled) {
-            if (settings.autoBatchDownload === true) {
-                controller.isBatchingNow = true;
-                const started = await controller.startDownload({ autoBatchMode: true });
-                if (!started) controller.isBatchingNow = false;
-                controller.setAutoScrollUi(started);
-                await controller.saveSetting('autoScroll', started);
+        if (settings.autoBatchDownload === true) {
+            controller.isBatchingNow = true;
+            const started = await controller.startDownload({ autoBatchMode: true });
+            if (!started) controller.isBatchingNow = false;
+            controller.setAutoScrollUi(started);
+            await controller.saveSetting('autoScroll', started);
+            return;
+        }
+
+        await chrome.tabs.sendMessage(tab.id, { action: 'startAutoScroll' });
+        controller.isAutoScrolling = true;
+        clearAutoScrollTimer(controller);
+        controller.isBatchingNow = false;
+
+        controller.autoScrollStatsTimer = window.setInterval(async () => {
+            if (controller.isBatchingNow) return;
+
+            const targetTab = await controller.getActivePinterestTab();
+            if (!targetTab?.id) {
                 return;
             }
 
-            await chrome.tabs.sendMessage(tab.id, { action: 'startAutoScroll' });
-            controller.isAutoScrolling = true;
+            await controller.ensureContentScriptInjected(targetTab.id);
+            await controller.updateImageCounts();
 
-            if (controller.autoScrollStatsTimer) {
-                clearInterval(controller.autoScrollStatsTimer);
-            }
-
-            controller.isBatchingNow = false;
-
-            controller.autoScrollStatsTimer = window.setInterval(async () => {
-                if (controller.isBatchingNow) return;
-
-                const targetTab = await controller.getActivePinterestTab();
-                if (!targetTab?.id) {
-                    return;
-                }
-
-                await controller.ensureContentScriptInjected(targetTab.id);
-                await controller.updateImageCounts();
-
-            }, 1000);
-        } else {
-            if (settings.autoBatchDownload === true) {
-                await controller.cancelBatchTask();
-            }
-            await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
-            controller.isAutoScrolling = false;
-
-            if (controller.autoScrollStatsTimer) {
-                clearInterval(controller.autoScrollStatsTimer);
-                controller.autoScrollStatsTimer = null;
-            }
-
-            controller.isBatchingNow = false;
-            setTimeout(() => controller.updateImageCounts(), 500);
-        }
+        }, 1000);
 
         controller.setAutoScrollUi(enabled);
         await controller.saveSetting('autoScroll', enabled);
@@ -295,12 +321,8 @@ export async function startDownload(
 
 export function cancelDownload(controller: PopupDownloadController) {
     void controller.cancelBatchTask();
-    controller.isBatchingNow = false;
-    if (controller.autoScrollStatsTimer) {
-        clearInterval(controller.autoScrollStatsTimer);
-        controller.autoScrollStatsTimer = null;
-    }
-    void controller.toggleAutoScroll(false);
+    setAutoOptionsDisabled(controller);
+    void saveAutoOptionsDisabled(controller);
     hideProgress(controller);
 }
 
