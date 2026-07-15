@@ -17,7 +17,7 @@ import {
     type DownloadTerminalState
 } from './download-settlement';
 import { BatchTaskManager } from './batch-task-manager';
-import { normalizeAutoBatchLimit } from '../shared/download-batching';
+import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from '../shared/download-batching';
 import { isTerminalBatchPhase, type BatchRunResult, type BatchTaskSnapshot } from '../shared/batch-task';
 import {
     type AutoBatchWindowRequest,
@@ -61,11 +61,13 @@ export class BatchCoordinator {
         const settings = request.settings ?? {};
         const targetTabId = typeof request.targetTabId === 'number' ? request.targetTabId : senderTabId;
         const autoBatchLimit = normalizeAutoBatchLimit(request.autoBatchLimit ?? settings.autoBatchLimit);
+        const autoBatchTotalBatches = normalizeAutoBatchTotalBatches(request.autoBatchTotalBatches ?? settings.autoBatchTotalBatches);
         const result = await this.taskManager.start({
             mode,
             targetTabId,
             totalImages: mode === 'manual' ? images.length : 0,
             autoBatchLimit,
+            autoBatchTotalBatches,
             settings
         });
         if (!result.accepted) return result;
@@ -496,7 +498,13 @@ export class BatchCoordinator {
     private async acceptSettledWindow(snapshot: BatchTaskSnapshot): Promise<void> {
         const activeWindow = snapshot.activeWindow;
         if (!activeWindow) return;
-        const finalWindow = activeWindow.finalWindow;
+        const completedBatches = snapshot.mode === 'auto'
+            ? snapshot.autoBatchCompletedBatches + 1
+            : snapshot.autoBatchCompletedBatches;
+        const reachedBatchCap = snapshot.mode === 'auto'
+            && snapshot.autoBatchTotalBatches > 0
+            && completedBatches >= snapshot.autoBatchTotalBatches;
+        const finalWindow = activeWindow.finalWindow || reachedBatchCap;
         await this.taskManager.mutate(snapshot.jobId, (current) => {
             if (!current.activeWindow || current.activeWindow.windowId !== activeWindow.windowId) return {};
             return {
@@ -505,6 +513,7 @@ export class BatchCoordinator {
                 zippedCount: current.zippedCount + activeWindow.zippedCount,
                 fallbackCount: current.fallbackCount + activeWindow.fallbackCount,
                 unresolvedCount: current.unresolvedCount + activeWindow.unresolvedCount,
+                autoBatchCompletedBatches: completedBatches,
                 autoSessionFinished: current.mode === 'manual' || finalWindow,
                 activeWindow: null
             };

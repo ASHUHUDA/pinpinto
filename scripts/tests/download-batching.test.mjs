@@ -8,6 +8,7 @@ test('download batching helpers preserve auto batch limit and thresholds', async
     AUTO_BATCH_DOWNLOAD_LIMIT,
     getNextBatchThreshold,
     normalizeAutoBatchLimit,
+    normalizeAutoBatchTotalBatches,
     shouldTriggerAutoBatch
   } = await loadTsModule('src/shared/download-batching.ts');
 
@@ -20,6 +21,12 @@ test('download batching helpers preserve auto batch limit and thresholds', async
   assert.equal(normalizeAutoBatchLimit(0), 1);
   assert.equal(normalizeAutoBatchLimit(101), 100);
   assert.equal(normalizeAutoBatchLimit(1001), 100);
+  assert.equal(normalizeAutoBatchTotalBatches(undefined), 0);
+  assert.equal(normalizeAutoBatchTotalBatches(''), 0);
+  assert.equal(normalizeAutoBatchTotalBatches('abc'), 0);
+  assert.equal(normalizeAutoBatchTotalBatches(3), 3);
+  assert.equal(normalizeAutoBatchTotalBatches('3.9'), 3);
+  assert.equal(normalizeAutoBatchTotalBatches(-1), 0);
   assert.equal(getNextBatchThreshold(0), 100);
   assert.equal(getNextBatchThreshold(1), 200);
   assert.equal(shouldTriggerAutoBatch(99, 0, true), false);

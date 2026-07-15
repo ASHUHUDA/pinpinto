@@ -45,6 +45,7 @@ export type StartBatchRequest = {
     settings?: Record<string, unknown>;
     targetTabId?: number;
     autoBatchLimit?: number;
+    autoBatchTotalBatches?: number;
 };
 
 export type AutoBatchWindowRequest = {

@@ -316,6 +316,52 @@ test('automatic windows serialize browser settlement, content commit, cursor adv
   );
 });
 
+test('automatic batch stops after the configured total batch count', async () => {
+  const storage = createStorage();
+  const broadcasts = [];
+  globalThis.fetch = async () => imageResponse();
+  const browser = installChrome(storage, { firstDownloadId: 950 });
+  const { BatchCoordinator } = await loadTsModule('src/background/batch-coordinator.ts');
+  const host = createHost(broadcasts);
+  const coordinator = new BatchCoordinator(host);
+  const started = await coordinator.start({
+    mode: 'auto',
+    targetTabId: 21,
+    autoBatchLimit: 1,
+    autoBatchTotalBatches: 2,
+    settings: { autoBatchLimit: 1, autoBatchTotalBatches: 2 }
+  });
+  await waitFor(() => browser.tabMessages.some(({ message }) => message.action === 'startAutoBatchSession'));
+
+  for (let index = 0; index < 2; index++) {
+    assert.equal(await coordinator.acceptAutoBatchWindow({
+      jobId: started.jobId,
+      images: [{ id: 'img-' + index, url: 'https://example.com/' + index + '.jpg' }],
+      startOffset: index,
+      endOffset: index + 1,
+      finalWindow: false
+    }, 21), true);
+    const pending = await waitFor(async () => (await coordinator.getSnapshot())?.activeWindow?.startOffset === index
+      && (await coordinator.getSnapshot()).activeWindow.expectedDownloadIds.length ? await coordinator.getSnapshot() : null);
+    const zipDownloadId = pending.activeWindow.expectedDownloadIds[0];
+    coordinator.handleDownloadChange({ id: zipDownloadId, state: { current: 'complete' } }, host.activeDownloads.get(zipDownloadId));
+    if (index === 0) {
+      await waitFor(async () => (await coordinator.getSnapshot())?.batchCursor === 1);
+    }
+  }
+
+  const completed = await waitFor(() => completedBroadcast(broadcasts)?.snapshot);
+  assert.equal(completed.batchCursor, 2);
+  assert.equal(completed.autoBatchCompletedBatches, 2);
+  assert.equal(completed.autoSessionFinished, true);
+  assert.equal(storage.current(), null);
+  assert.deepEqual(
+    browser.tabMessages.filter(({ message }) => ['resumeAutoBatchSession', 'finishAutoBatchSession', 'clearAllImages'].includes(message.action))
+      .map(({ message }) => message.action),
+    ['resumeAutoBatchSession', 'finishAutoBatchSession', 'clearAllImages']
+  );
+});
+
 test('ten automatic windows preserve absolute cursor order and never overlap transactions', async () => {
   const storage = createStorage();
   const broadcasts = [];

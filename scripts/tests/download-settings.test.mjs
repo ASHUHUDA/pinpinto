@@ -11,6 +11,7 @@ test('shared download settings defaults include only common download settings', 
     autoScroll: false,
     autoBatchDownload: false,
     autoBatchLimit: 100,
+    autoBatchTotalBatches: 0,
     filenameFormat: 'title_date',
     folderOrganization: 'date',
     customFolder: ''

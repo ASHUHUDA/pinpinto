@@ -2,7 +2,7 @@ import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from '
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, SIDEBAR_STATIC_TRANSLATIONS, SIDEBAR_STATUS_TRANSLATIONS, SupportedLanguage, normalizeLanguage } from './shared/ui-translations';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
-import { normalizeAutoBatchLimit } from './shared/download-batching';
+import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from './shared/download-batching';
 import { BatchTaskClient } from './shared/batch-task-client';
 import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
 import {
@@ -101,6 +101,13 @@ class PinVaultProSidebar {
             this.saveAutoBatchLimit((e.target as HTMLInputElement).value);
         });
         document.getElementById('autoBatchLimit')?.addEventListener('input', (e) => {
+            const input = e.target as HTMLInputElement;
+            input.value = input.value.replace(/\D/g, '').slice(0, 4);
+        });
+        document.getElementById('autoBatchTotalBatches')?.addEventListener('change', (e) => {
+            this.saveAutoBatchTotalBatches((e.target as HTMLInputElement).value);
+        });
+        document.getElementById('autoBatchTotalBatches')?.addEventListener('input', (e) => {
             const input = e.target as HTMLInputElement;
             input.value = input.value.replace(/\D/g, '').slice(0, 4);
         });
@@ -358,6 +365,7 @@ class PinVaultProSidebar {
             const autoBatchToggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
             if (autoBatchToggle) autoBatchToggle.checked = settings.autoBatchDownload === true;
             this.syncAutoBatchLimitInput(settings.autoBatchLimit);
+            this.syncAutoBatchTotalBatchesInput(settings.autoBatchTotalBatches);
         } catch (error) {
             console.error('Error loading settings:', error);
         }
@@ -375,10 +383,22 @@ class PinVaultProSidebar {
         if (input) input.value = String(normalizeAutoBatchLimit(value));
     }
 
+    syncAutoBatchTotalBatchesInput(value: unknown) {
+        const input = document.getElementById('autoBatchTotalBatches') as HTMLInputElement | null;
+        const totalBatches = normalizeAutoBatchTotalBatches(value);
+        if (input) input.value = totalBatches > 0 ? String(totalBatches) : '';
+    }
+
     async saveAutoBatchLimit(value: unknown) {
         const limit = normalizeAutoBatchLimit(value);
         this.syncAutoBatchLimitInput(limit);
         await this.saveSetting('autoBatchLimit', limit);
+    }
+
+    async saveAutoBatchTotalBatches(value: unknown) {
+        const totalBatches = normalizeAutoBatchTotalBatches(value);
+        this.syncAutoBatchTotalBatchesInput(totalBatches);
+        await this.saveSetting('autoBatchTotalBatches', totalBatches);
     }
 
     async saveSetting(key: string, value: unknown) {

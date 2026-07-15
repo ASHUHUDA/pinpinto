@@ -1,4 +1,4 @@
-import { normalizeAutoBatchLimit } from '../shared/download-batching';
+import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from '../shared/download-batching';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from '../shared/download-settings';
 
 type PopupDownloadController = {
@@ -44,6 +44,16 @@ function setAutoOptionsDisabled(controller: PopupDownloadController) {
     clearAutoScrollTimer(controller);
     controller.setAutoScrollUi(false);
     setAutoBatchUi(false);
+}
+
+async function getCurrentAutoBatchTotalBatches(controller: PopupDownloadController, storedValue: unknown): Promise<number> {
+    const input = document.getElementById('autoBatchTotalBatches') as HTMLInputElement | null;
+    const totalBatches = normalizeAutoBatchTotalBatches(input?.value ?? storedValue);
+    if (input) input.value = totalBatches > 0 ? String(totalBatches) : '';
+    if (normalizeAutoBatchTotalBatches(storedValue) !== totalBatches) {
+        await controller.saveSetting('autoBatchTotalBatches', totalBatches);
+    }
+    return totalBatches;
 }
 
 export async function clearAllImagesOnPage(controller: PopupDownloadController, tabId: number) {
@@ -223,11 +233,14 @@ export async function startDownload(
 
         if (autoBatchMode) {
             showProgress(controller);
+            const autoBatchTotalBatches = await getCurrentAutoBatchTotalBatches(controller, settings.autoBatchTotalBatches);
+            const autoSettings = { ...settings, autoBatchTotalBatches };
             const response = await controller.startBatchTask({
                 mode: 'auto',
                 targetTabId: tab.id,
-                settings,
-                autoBatchLimit: normalizeAutoBatchLimit(settings.autoBatchLimit)
+                settings: autoSettings,
+                autoBatchLimit: normalizeAutoBatchLimit(settings.autoBatchLimit),
+                autoBatchTotalBatches
             });
             if (!response.accepted) {
                 const details = controller.language === 'zh'

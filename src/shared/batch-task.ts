@@ -88,6 +88,8 @@ export type BatchTaskSnapshot = {
     activeWindow: ActiveBatchWindow | null;
     autoSessionFinished: boolean;
     autoBatchLimit: number;
+    autoBatchTotalBatches: number;
+    autoBatchCompletedBatches: number;
     settings: Record<string, unknown>;
     createdAt: number;
     updatedAt: number;

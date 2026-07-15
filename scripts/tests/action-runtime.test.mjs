@@ -299,6 +299,118 @@ test('sidebar auto-batch uses the configured image limit', async () => {
   assert.equal(startCalls[0].autoBatchLimit, 25);
 });
 
+test('popup auto-batch sends the configured total batch count', async () => {
+  installMinimalDom();
+  document.getElementById('totalImages').textContent = '25';
+  document.getElementById('autoBatchTotalBatches').value = '3';
+
+  globalThis.chrome = {
+    tabs: {
+      async sendMessage(tabId, payload) {
+        if (payload.action === 'getViewportAnchor') return { anchorIndex: 0 };
+        return { success: true };
+      }
+    },
+    storage: {
+      sync: {
+        async get() {
+          return {
+            highQuality: true,
+            autoScroll: false,
+            autoBatchDownload: true,
+            autoBatchLimit: 25,
+            autoBatchTotalBatches: 0,
+            filenameFormat: 'title_date',
+            folderOrganization: 'date',
+            customFolder: ''
+          };
+        }
+      }
+    }
+  };
+
+  const popupActions = await loadTsModule('src/popup/download-actions.ts');
+  const startCalls = [];
+  const savedSettings = [];
+  const controller = {
+    language: 'zh',
+    isBatchingNow: false,
+    isAutoScrolling: false,
+    autoScrollStatsTimer: null,
+    async getActivePinterestTab() { return { id: 123, url: 'https://www.pinterest.com/test/' }; },
+    async rememberSidebarTargetTab() {},
+    async ensureContentScriptInjected() { return true; },
+    updateStatsDisplay() {},
+    async saveSetting(key, value) { savedSettings.push([key, value]); },
+    setAutoScrollUi() {},
+    async updateImageCounts() {},
+    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-total-3' }; },
+    async cancelBatchTask() { return true; },
+    async toggleAutoScroll() {}
+  };
+
+  await popupActions.startDownload(controller, { autoBatchMode: true });
+
+  assert.equal(startCalls[0].autoBatchTotalBatches, 3);
+  assert.equal(startCalls[0].settings.autoBatchTotalBatches, 3);
+  assert.deepEqual(savedSettings, [['autoBatchTotalBatches', 3]]);
+});
+
+test('sidebar auto-batch sends the configured total batch count', async () => {
+  installMinimalDom();
+  document.getElementById('totalImages').textContent = '25';
+  document.getElementById('autoBatchTotalBatches').value = '3';
+
+  globalThis.chrome = {
+    tabs: {
+      async sendMessage(tabId, payload) {
+        if (payload.action === 'getViewportAnchor') return { anchorIndex: 0 };
+        return { success: true };
+      }
+    },
+    storage: {
+      sync: {
+        async get() {
+          return {
+            highQuality: true,
+            autoScroll: false,
+            autoBatchDownload: true,
+            autoBatchLimit: 25,
+            autoBatchTotalBatches: 0,
+            filenameFormat: 'title_date',
+            folderOrganization: 'date',
+            customFolder: ''
+          };
+        }
+      }
+    }
+  };
+
+  const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
+  const startCalls = [];
+  const savedSettings = [];
+  const controller = {
+    isBatchingNow: false,
+    autoScrollStatsTimer: null,
+    async resolveTargetTab() { return { id: 321, url: 'https://www.pinterest.com/test/' }; },
+    async ensureContentScriptInjected() { return true; },
+    updateStatsDisplay() {},
+    async updateStats() {},
+    async saveSetting(key, value) { savedSettings.push([key, value]); },
+    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-total-3' }; },
+    async cancelBatchTask() { return true; },
+    async toggleAutoScroll() {},
+    t() { return ''; }
+  };
+
+  await sidebarActions.startDownload(controller, { autoBatchMode: true });
+
+  assert.equal(startCalls[0].autoBatchTotalBatches, 3);
+  assert.equal(startCalls[0].settings.autoBatchTotalBatches, 3);
+  assert.deepEqual(savedSettings, [['autoBatchTotalBatches', 3]]);
+});
+
+
 test('popup cancelDownload sends batch-cancel message and clears local auto options', async () => {
   installMinimalDom();
   document.getElementById('autoScrollToggle').checked = true;

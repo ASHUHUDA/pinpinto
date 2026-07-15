@@ -4,6 +4,7 @@ import {
     type BatchTaskMode,
     type BatchTaskSnapshot
 } from '../shared/batch-task';
+import { normalizeAutoBatchTotalBatches } from '../shared/download-batching';
 
 export const BATCH_TASK_STORAGE_KEY = 'pinpintoBatchTask';
 
@@ -25,6 +26,7 @@ type StartTaskInput = {
     targetTabId?: number | null;
     totalImages?: number;
     autoBatchLimit?: number;
+    autoBatchTotalBatches?: number;
     settings?: Record<string, unknown>;
 };
 
@@ -91,6 +93,8 @@ export class BatchTaskManager {
                 activeWindow: null,
                 autoSessionFinished: input.mode === 'manual',
                 autoBatchLimit: Math.max(1, Math.floor(input.autoBatchLimit ?? 100)),
+                autoBatchTotalBatches: normalizeAutoBatchTotalBatches(input.autoBatchTotalBatches),
+                autoBatchCompletedBatches: 0,
                 settings: input.settings ?? {},
                 createdAt: now,
                 updatedAt: now
@@ -211,6 +215,8 @@ function normalizeSnapshot(candidate: BatchTaskSnapshot): BatchTaskSnapshot {
         pendingFallbackDownloadIds: uniqueNumbers(candidate.pendingFallbackDownloadIds),
         activeWindow: candidate.activeWindow ?? null,
         autoBatchLimit: Math.max(1, Math.floor(candidate.autoBatchLimit ?? 100)),
+        autoBatchTotalBatches: normalizeAutoBatchTotalBatches(candidate.autoBatchTotalBatches),
+        autoBatchCompletedBatches: Math.max(0, Math.floor(candidate.autoBatchCompletedBatches ?? 0)),
         settings: candidate.settings ?? {}
     };
 }

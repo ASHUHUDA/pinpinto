@@ -2,7 +2,7 @@ import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from '
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
 import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
-import { normalizeAutoBatchLimit } from './shared/download-batching';
+import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from './shared/download-batching';
 import { BatchTaskClient } from './shared/batch-task-client';
 import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
 import {
@@ -26,6 +26,7 @@ type PopupSettings = {
     autoScroll: boolean;
     autoBatchDownload: boolean;
     autoBatchLimit: number;
+    autoBatchTotalBatches: number;
     theme: string;
 };
 
@@ -85,6 +86,7 @@ class PinVaultProPopup {
             autoBatchToggle.checked = settings.autoBatchDownload;
         }
         this.syncAutoBatchLimitInput(settings.autoBatchLimit);
+        this.syncAutoBatchTotalBatchesInput(settings.autoBatchTotalBatches);
 
         this.applyTheme(settings.theme);
 
@@ -136,6 +138,13 @@ class PinVaultProPopup {
             this.saveAutoBatchLimit((e.target as HTMLInputElement).value);
         });
         document.getElementById('autoBatchLimit')?.addEventListener('input', (e) => {
+            const input = e.target as HTMLInputElement;
+            input.value = input.value.replace(/\D/g, '').slice(0, 4);
+        });
+        document.getElementById('autoBatchTotalBatches')?.addEventListener('change', (e) => {
+            this.saveAutoBatchTotalBatches((e.target as HTMLInputElement).value);
+        });
+        document.getElementById('autoBatchTotalBatches')?.addEventListener('input', (e) => {
             const input = e.target as HTMLInputElement;
             input.value = input.value.replace(/\D/g, '').slice(0, 4);
         });
@@ -387,10 +396,22 @@ class PinVaultProPopup {
         if (input) input.value = String(normalizeAutoBatchLimit(value));
     }
 
+    syncAutoBatchTotalBatchesInput(value: unknown) {
+        const input = document.getElementById('autoBatchTotalBatches') as HTMLInputElement | null;
+        const totalBatches = normalizeAutoBatchTotalBatches(value);
+        if (input) input.value = totalBatches > 0 ? String(totalBatches) : '';
+    }
+
     async saveAutoBatchLimit(value: unknown) {
         const limit = normalizeAutoBatchLimit(value);
         this.syncAutoBatchLimitInput(limit);
         await this.saveSetting('autoBatchLimit', limit);
+    }
+
+    async saveAutoBatchTotalBatches(value: unknown) {
+        const totalBatches = normalizeAutoBatchTotalBatches(value);
+        this.syncAutoBatchTotalBatchesInput(totalBatches);
+        await this.saveSetting('autoBatchTotalBatches', totalBatches);
     }
 
     async startDownload(options: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number } = {}) { return startPopupDownload(this, options); }

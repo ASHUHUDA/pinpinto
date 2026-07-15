@@ -94,7 +94,9 @@ test('auto-batch limit stays in a separate manual-input area', async () => {
   for (const html of [popupHtml, sidebarHtml]) {
     assert.match(html, /data-i18n="panel\.autoBatchSettings"/);
     assert.match(html, /type="text" id="autoBatchLimit" inputmode="numeric"/);
+    assert.match(html, /type="text" id="autoBatchTotalBatches" inputmode="numeric"/);
     assert.doesNotMatch(html, /type="number"[^>]*id="autoBatchLimit"|id="autoBatchLimit"[^>]*type="number"/);
+    assert.doesNotMatch(html, /type="number"[^>]*id="autoBatchTotalBatches"|id="autoBatchTotalBatches"[^>]*type="number"/);
   }
 });
 
