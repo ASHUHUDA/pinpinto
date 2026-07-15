@@ -137,3 +137,76 @@ test('exhausted content session retries finish handshake until background accept
   assert.equal(controller.getJobId(), null);
   assert.equal(finishAttempts, 2);
 });
+
+test('eligible auto windows use absolute offsets and only compact the matching job range', async () => {
+  const timers = [];
+  const messages = [];
+  const commits = [];
+  const records = [{ id: 'eligible-20' }, { id: 'eligible-21' }];
+  const { AutoBatchSessionController } = await loadTsModule('src/content/auto-batch-session.ts');
+  const controller = new AutoBatchSessionController({
+    scanForImages() {},
+    getTotalImages() { return 99; },
+    getImagesInRange() { throw new Error('legacy range must not be used'); },
+    getViewportAnchorIndex() { return 7; },
+    discardImagesBeforeIndex() { throw new Error('legacy discard must not be used'); },
+    prepareAutoBatchSession(index) {
+      assert.equal(index, 7);
+      return { baseOffset: 20 };
+    },
+    getAutoEligibleWindow(cursor, limit, exhausted) {
+      assert.deepEqual({ cursor, limit, exhausted }, { cursor: 20, limit: 2, exhausted: false });
+      return { records, startOffset: 20, endOffset: 22, finalWindow: false, baseOffset: 20 };
+    },
+    commitAutoBatchWindow(input) {
+      commits.push(input);
+      return { success: true, baseOffset: 22, retainedCount: 3, removedIds: ['old-1'] };
+    },
+    startAutoScroll() {},
+    stopAutoScroll() {},
+    getAutoScrollStopReason() { return null; },
+    async sendMessage(message) { messages.push(message); return { accepted: true }; },
+    setInterval(callback) { timers.push(callback); return timers.length; },
+    clearInterval() {}
+  });
+
+  await controller.start({ jobId: 'job-absolute', limit: 2, settings: {} });
+  await timers[0]();
+  assert.deepEqual(messages[0], {
+    action: 'autoBatchWindowReady',
+    jobId: 'job-absolute',
+    images: records,
+    settings: {},
+    startIndex: 20,
+    endIndex: 22,
+    finalWindow: false,
+    startOffset: 20,
+    endOffset: 22,
+    baseOffset: 20
+  });
+
+  assert.equal(controller.commitWindow({
+    jobId: 'wrong-job', startOffset: 20, endOffset: 22
+  }).success, false);
+  assert.equal(controller.commitWindow({
+    jobId: 'job-absolute', startOffset: 20, endOffset: 21
+  }).success, false);
+  assert.equal(controller.commitWindow({
+    jobId: 'job-absolute', startOffset: 20.5, endOffset: 22
+  }).success, false);
+
+  const acknowledgement = controller.commitWindow({
+    jobId: 'job-absolute', startOffset: 20, endOffset: 22
+  });
+  assert.deepEqual(acknowledgement, {
+    success: true,
+    baseOffset: 22,
+    retainedCount: 3,
+    removedIds: ['old-1']
+  });
+  assert.deepEqual(commits, [{ startOffset: 20, endOffset: 22, autoBatchLimit: 2 }]);
+  assert.deepEqual(controller.commitWindow({
+    jobId: 'job-absolute', startOffset: 20, endOffset: 22
+  }), acknowledgement, 'duplicate commit delivery is idempotent');
+  assert.equal(commits.length, 1);
+});

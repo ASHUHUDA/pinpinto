@@ -1,0 +1,83 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: pinpinto-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        shell: pwsh
+        run: corepack enable
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        shell: pwsh
+        run: '"store_path=$(corepack.cmd pnpm store path --silent)" >> $env:GITHUB_OUTPUT'
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.store_path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: corepack.cmd pnpm install --frozen-lockfile
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}\ms-playwright
+        run: corepack.cmd pnpm exec playwright install chromium
+
+      - name: Verify source and Chrome build
+        run: corepack.cmd pnpm run verify
+
+      - name: Audit production dependencies
+        run: corepack.cmd pnpm run audit:dependencies
+
+      - name: Build browser artifacts
+        run: corepack.cmd pnpm run build:browsers
+
+      - name: Audit production artifacts
+        run: corepack.cmd pnpm run audit:production
+
+      - name: Run extension E2E
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}\ms-playwright
+        run: corepack.cmd pnpm run test:e2e
+
+      - name: Upload Playwright evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-evidence
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 14

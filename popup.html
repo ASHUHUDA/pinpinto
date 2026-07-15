@@ -23,7 +23,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-            <span class="badge-version">v1.5.7</span>
+            <span class="badge-version">v1.5.8</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -74,7 +74,7 @@
         </select>
 
         <div class="status-bar">
-            <div class="connection-status" id="connectionStatus">
+            <div class="connection-status" id="connectionStatus" role="status" aria-live="polite" aria-atomic="true">
                 <span class="status-indicator" id="statusIndicator"></span>
                 <span id="statusText" class="status-text">Checking...</span>
             </div>
@@ -170,18 +170,6 @@
                         <span class="checkbox-text" data-i18n="setting.highQuality">Prefer high quality</span>
                     </label>
 
-                    <input type="checkbox" id="advancedFeaturesToggle" style="display:none;">
-                    <input type="checkbox" id="smartFeaturesToggle" style="display:none;">
-                    <input type="checkbox" id="autoDownloadScheduler" style="display:none;">
-                    <input type="checkbox" id="batchProcessing" style="display:none;">
-                    <select id="imageSizeFilter" style="display:none;">
-                        <option value="all"></option>
-                    </select>
-
-                    <div id="smartFeaturesPanel" style="display:none;">
-                        <input type="checkbox" id="duplicateDetection" checked>
-                        <input type="checkbox" id="customWatermark">
-                    </div>
                 </div>
 
                 <button class="btn btn-primary btn-large" id="downloadBtn" disabled>
@@ -196,11 +184,11 @@
 
                 <div class="progress-zone" id="progressSection" style="display: none;">
                     <div class="progress-info">
-                        <span class="progress-status" id="progressDetails">Preparing download...</span>
+                        <span class="progress-status" id="progressDetails" role="status" aria-live="polite" aria-atomic="true">Preparing download...</span>
                         <span class="progress-percent" id="progressText">0%</span>
                     </div>
                     <div class="progress-track">
-                        <div class="progress-fill" id="progressFill"></div>
+                        <div class="progress-fill" id="progressFill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                     </div>
                     <button class="btn btn-ghost danger-text" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
                 </div>

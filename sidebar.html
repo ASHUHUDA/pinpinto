@@ -20,7 +20,7 @@
             </div>
             <div class="header-info">
                 <h1>PinPinto</h1>
-            <span class="badge-version">v1.5.7</span>
+            <span class="badge-version">v1.5.8</span>
             </div>
             <div class="header-actions">
                 <div class="settings-dropdown">
@@ -57,7 +57,7 @@
         </header>
 
         <div class="status-section">
-            <div class="connection-status" id="connectionStatus">
+            <div class="connection-status" id="connectionStatus" role="status" aria-live="polite" aria-atomic="true">
                 <span class="status-indicator" id="statusIndicator"></span>
                 <span id="statusText" class="status-text">Checking...</span>
             </div>
@@ -106,11 +106,11 @@
 
             <div class="progress-section" id="progressSection" style="display: none;">
                 <div class="progress-info">
-                    <span class="progress-status" id="progressDetails">Preparing download...</span>
+                    <span class="progress-status" id="progressDetails" role="status" aria-live="polite" aria-atomic="true">Preparing download...</span>
                     <span class="progress-percent" id="progressText">0%</span>
                 </div>
                 <div class="progress-track">
-                    <div class="progress-fill" id="progressFill"></div>
+                    <div class="progress-fill" id="progressFill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                 </div>
                 <button class="btn btn-ghost danger-text btn-block" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
             </div>

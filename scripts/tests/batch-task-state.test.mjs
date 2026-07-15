@@ -8,6 +8,7 @@ function createStorage(initialValue = null) {
   return {
     async get() { return { pinpintoBatchTask: value }; },
     async set(update) { value = update.pinpintoBatchTask; },
+    async remove() { value = null; },
     current() { return value; }
   };
 }
@@ -34,7 +35,23 @@ test('task manager rejects a second active job and restores popup state from its
   assert.equal(broadcasts.at(-1).jobId, 'job-1');
 });
 
-test('task manager marks fetch/compression work interrupted after a service-worker restart', async () => {
+test('task manager removes a completed snapshot left behind by an interrupted final clear', async () => {
+  const { BatchTaskManager } = await loadTsModule('src/background/batch-task-manager.ts');
+  const storage = createStorage({
+    jobId: 'completed-job', mode: 'manual', targetTabId: 8, phase: 'completed', batchCursor: 0,
+    progress: 100, details: 'done', totalImages: 0, zippedCount: 0, fallbackCount: 0,
+    unresolvedCount: 0, associatedDownloadIds: [], pendingFallbackDownloadIds: [], activeWindow: null,
+    autoSessionFinished: true, autoBatchLimit: 100, settings: {}, createdAt: 1, updatedAt: 2
+  });
+  const broadcasts = [];
+  const manager = new BatchTaskManager({ storage, broadcast(snapshot) { broadcasts.push(snapshot); } });
+
+  assert.equal(await manager.initialize(), null);
+  assert.equal(storage.current(), null);
+  assert.deepEqual(broadcasts.map(({ phase }) => phase), ['completed']);
+});
+
+test('task manager preserves active work for coordinator restart reconciliation', async () => {
   const { BatchTaskManager } = await loadTsModule('src/background/batch-task-manager.ts');
   const storage = createStorage({
     jobId: 'old-job',
@@ -59,8 +76,8 @@ test('task manager marks fetch/compression work interrupted after a service-work
   await manager.initialize();
   const restored = await manager.getSnapshot();
 
-  assert.equal(restored.phase, 'interrupted');
-  assert.match(restored.details, /重新开始/);
+  assert.equal(restored.phase, 'fetching');
+  assert.equal(restored.activeWindow, null);
 });
 
 test('shared task client ignores another job and cancels only its current job', async () => {

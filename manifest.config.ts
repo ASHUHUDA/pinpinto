@@ -4,9 +4,10 @@ import { PINIMG_MATCH_PATTERNS, PINTEREST_MATCH_PATTERNS } from './src/shared/pi
 const runtimeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
 const browserTarget = (runtimeEnv.BROWSER_TARGET || 'chrome').toLowerCase()
 const isFirefoxTarget = browserTarget === 'firefox'
+const isE2EBuild = runtimeEnv.PINPINTO_E2E === 'true'
 
 const basePermissions = ['downloads', 'storage', 'contextMenus', 'activeTab', 'scripting', 'windows']
-const permissions = isFirefoxTarget ? basePermissions : [...basePermissions, 'sidePanel']
+const permissions = isFirefoxTarget ? basePermissions : [...basePermissions, 'sidePanel', 'offscreen']
 
 const browserUiSection = isFirefoxTarget
   ? {
@@ -36,10 +37,14 @@ const browserUiSection = isFirefoxTarget
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest Downloader',
-  version: '1.5.7',
+  version: '1.5.8',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions,
-  host_permissions: [...PINTEREST_MATCH_PATTERNS, ...PINIMG_MATCH_PATTERNS],
+  host_permissions: [
+    ...PINTEREST_MATCH_PATTERNS,
+    ...PINIMG_MATCH_PATTERNS,
+    ...(isE2EBuild ? ['http://127.0.0.1/*'] : [])
+  ],
   background: isFirefoxTarget
     ? {
         scripts: ['src/background.ts'],

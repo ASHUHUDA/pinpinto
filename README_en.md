@@ -44,6 +44,18 @@ corepack.cmd pnpm build
 
 # build Chrome + Firefox release artifacts
 corepack.cmd pnpm run build:browsers
+
+# audit the production Chrome and Firefox packages
+corepack.cmd pnpm run audit:production
+
+# audit production dependency advisories
+corepack.cmd pnpm run audit:dependencies
+
+# install Chromium before the first end-to-end run
+corepack.cmd pnpm exec playwright install chromium
+
+# run deterministic extension end-to-end tests
+corepack.cmd pnpm run test:e2e
 ```
 
 `build:browsers` will:
@@ -51,6 +63,10 @@ corepack.cmd pnpm run build:browsers
 - output the Firefox package to `artifacts/pinpinto-firefox-v*.xpi`
 - target Firefox 115 or newer for module background scripts and `storage.session`
 - and **keep `dist` as the Chrome build**, so Chrome / Edge do not accidentally load a Firefox manifest
+
+The end-to-end suite uses an isolated Chromium profile and an intercepted Pinterest search page. It requires no login and never mutates a real Pinterest account. It verifies recommendation filtering, an 80-image tail, ZIP and single-file disk settlement, retry behavior, successful cleanup, CSP, and accessibility state. Reports, screenshots, and traces are retained on failure.
+
+See the [testing guide](docs/testing.md) for first-time Playwright setup, the complete gate order, failure evidence locations, and the read-only live-smoke boundary.
 
 ## Project Structure
 - `src/background.ts`: browser events and message entry point
@@ -65,6 +81,8 @@ corepack.cmd pnpm run build:browsers
 
 ## License
 MIT (see [LICENSE](LICENSE))
+
+PinPinto is not affiliated with, endorsed by, or officially connected to Pinterest, Inc. Download only content you have a lawful right to download, and comply with applicable law, Pinterest's terms, copyright, and other intellectual property requirements.
 
 ---
 Upstream tribute: [inyogeshwar/pinvault-pro-extension](https://github.com/inyogeshwar/pinvault-pro-extension)

@@ -1,6 +1,6 @@
 {
   "name": "pinpinto",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "description": "",
   "main": "background.js",
   "scripts": {
@@ -8,6 +8,9 @@
     "icon:build": "node resize_icons.js",
     "typecheck": "tsc --noEmit",
     "test:release": "node --test scripts/tests/*.test.mjs",
+    "test:e2e": "node scripts/build-e2e.mjs && playwright test",
+    "audit:dependencies": "node scripts/dependency-audit.mjs",
+    "audit:production": "node scripts/production-audit.mjs",
     "verify": "tsc --noEmit && node --test scripts/tests/*.test.mjs && vite build",
     "release:preflight": "node scripts/release-preflight.mjs",
     "build": "vite build && node scripts/package-artifact.mjs --browser=chrome --source=dist --format=zip",
@@ -17,10 +20,12 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.4",
   "type": "module",
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.3.0",
+    "@playwright/test": "1.61.1",
     "@types/chrome": "^0.1.37",
     "sharp": "^0.34.5",
     "typescript": "^5.9.3",
@@ -30,4 +35,3 @@
     "jszip": "^3.10.1"
   }
 }
-

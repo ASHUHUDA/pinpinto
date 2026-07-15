@@ -16,11 +16,25 @@ function response(bytes, contentType = 'image/jpeg') {
   };
 }
 
-function createContext({ fetchImpl, fallbackImpl }) {
+async function createContext({ fetchImpl, fallbackImpl, runnerDependencies = {} }) {
+  const blobs = new Map();
+  let nextBlobUrl = 1;
+  const { BlobJobRunner } = await loadTsModule('src/background/blob-runner.ts');
+  const blobHost = new BlobJobRunner({
+    ...runnerDependencies,
+    fetchImpl,
+    createObjectURL(blob) {
+      const url = `blob:pinpinto-test/${nextBlobUrl++}`;
+      blobs.set(url, blob);
+      return url;
+    },
+    revokeObjectURL(url) { blobs.delete(url); }
+  });
   const progress = [];
   return {
+    blobHost,
+    blobs,
     maxConcurrentDownloads: 3,
-    fetchImpl,
     requestFallbackDownload: fallbackImpl,
     throwIfBatchCancelled() {},
     isBatchCancellationError() { return false; },
@@ -63,7 +77,7 @@ test('batch download tries high quality once, falls back to the original once, a
     }
   };
 
-  const context = createContext({
+  const context = await createContext({
     async fetchImpl(url) {
       fetchCalls.push(url);
       if (url.includes('/originals/')) throw new Error('not found');
@@ -101,12 +115,16 @@ test('batch download tries high quality once, falls back to the original once, a
     saveAs: false
   });
 
-  const zipBase64 = downloadCalls[0].url.split(',')[1];
-  const zip = await JSZip.loadAsync(Buffer.from(zipBase64, 'base64'));
+  assert.match(downloadCalls[0].url, /^blob:pinpinto-test\//);
+  const zipBlob = context.blobs.get(downloadCalls[0].url);
+  assert.ok(zipBlob instanceof Blob);
+  const zip = await JSZip.loadAsync(await zipBlob.arrayBuffer());
   assert.deepEqual(Object.keys(zip.files).sort(), [
     '001-20260714_153045.jpg',
     '002-20260714_153045.png'
   ]);
+  assert.equal(result.zipLeaseJobId, 'job-1:zip:0:2');
+  assert.deepEqual(await context.blobHost.listActiveJobs(), ['job-1:zip:0:2']);
 });
 
 test('failed fetches are handed to browser downloads and an all-fallback batch does not create an empty zip', async () => {
@@ -120,7 +138,7 @@ test('failed fetches are handed to browser downloads and an all-fallback batch d
       }
     }
   };
-  const context = createContext({
+  const context = await createContext({
     async fetchImpl() { throw new Error('blocked'); },
     async fallbackImpl(request) {
       fallbackCalls.push(request);
@@ -148,7 +166,7 @@ test('failed fetches are handed to browser downloads and an all-fallback batch d
 test('fallback request rejection becomes an unresolved image without retrying', async () => {
   let fallbackAttempts = 0;
   globalThis.chrome = { downloads: { async download() { throw new Error('zip should not run'); } } };
-  const context = createContext({
+  const context = await createContext({
     async fetchImpl() { throw new Error('blocked'); },
     async fallbackImpl() {
       fallbackAttempts++;
@@ -174,7 +192,7 @@ test('batch sequence offset keeps automatic windows globally numbered', async ()
       async cancel() {}
     }
   };
-  const context = createContext({
+  const context = await createContext({
     async fetchImpl() { return response([1, 2, 3]); },
     async fallbackImpl() { throw new Error('fallback should not run'); }
   });
@@ -185,9 +203,61 @@ test('batch sequence offset keeps automatic windows globally numbered', async ()
     { id: 'b', url: 'https://example.com/b.jpg' }
   ], { highQuality: true }, { sequenceOffset: 100 });
 
-  const zip = await JSZip.loadAsync(Buffer.from(downloadCalls[0].url.split(',')[1], 'base64'));
+  const zip = await JSZip.loadAsync(await context.blobs.get(downloadCalls[0].url).arrayBuffer());
   assert.deepEqual(Object.keys(zip.files).sort(), [
     '101-20260714_153045.jpg',
     '102-20260714_153045.jpg'
   ]);
+});
+
+test('runner failure is cancelled and released before runBatchDownload rejects', async () => {
+  globalThis.chrome = { downloads: { async download() { throw new Error('download must not start'); } } };
+  const context = await createContext({
+    async fetchImpl() { return response([1, 2, 3]); },
+    async fallbackImpl() { throw new Error('fallback must not run'); },
+    runnerDependencies: {
+      createZip() {
+        return {
+          file() {},
+          async generateAsync() { throw new Error('zip generation failed'); }
+        };
+      }
+    }
+  });
+  const { runBatchDownload } = await loadTsModule('src/background/batch-download.ts');
+  const job = createJob('job-failed');
+
+  await assert.rejects(
+    runBatchDownload(context, job, [{ id: 'a', url: 'https://example.com/a.jpg' }], { highQuality: true }),
+    /zip generation failed/
+  );
+  assert.deepEqual(await context.blobHost.listActiveJobs(), []);
+  assert.equal(await context.blobHost.getStatus('job-failed:zip:0:1'), null);
+});
+
+test('externally cancelled runner is released before its cancellation reaches the caller', async () => {
+  let fetchStarted;
+  const started = new Promise((resolve) => { fetchStarted = resolve; });
+  const context = await createContext({
+    fetchImpl(_url, { signal }) {
+      fetchStarted();
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    },
+    async fallbackImpl() { throw new Error('fallback must not run'); }
+  });
+  const { runBatchDownload } = await loadTsModule('src/background/batch-download.ts');
+  const run = runBatchDownload(
+    context,
+    createJob('job-cancelled'),
+    [{ id: 'a', url: 'https://example.com/a.jpg' }],
+    { highQuality: true }
+  );
+  await started;
+  await context.blobHost.cancel('job-cancelled:zip:0:1');
+
+  await assert.rejects(run, /cancelled/);
+  assert.deepEqual(await context.blobHost.listActiveJobs(), []);
+  assert.equal(await context.blobHost.getStatus('job-cancelled:zip:0:1'), null);
 });

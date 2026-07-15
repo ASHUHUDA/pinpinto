@@ -311,7 +311,10 @@ export function showProgress(controller: PopupDownloadController) {
     const progressDetails = document.getElementById('progressDetails');
 
     if (progressSection) progressSection.style.display = 'block';
-    if (progressFill) (progressFill as HTMLElement).style.width = '0%';
+    if (progressFill) {
+        (progressFill as HTMLElement).style.width = '0%';
+        if ('setAttribute' in progressFill) progressFill.setAttribute('aria-valuenow', '0');
+    }
     if (progressText) progressText.textContent = '0%';
     if (progressDetails) progressDetails.textContent = controller.language === 'zh' ? '准备下载...' : 'Preparing download...';
 }
@@ -326,7 +329,10 @@ export function updateProgress(controller: PopupDownloadController, progress: nu
     const progressText = document.getElementById('progressText');
     const progressDetails = document.getElementById('progressDetails');
 
-    if (progressFill) (progressFill as HTMLElement).style.width = `${progress}%`;
+    if (progressFill) {
+        (progressFill as HTMLElement).style.width = `${progress}%`;
+        if ('setAttribute' in progressFill) progressFill.setAttribute('aria-valuenow', String(progress));
+    }
     if (progressText) progressText.textContent = `${Math.round(progress)}%`;
     if (progressDetails) progressDetails.textContent = details;
 }

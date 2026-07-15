@@ -3,7 +3,10 @@ node_modules/
 
 # build outputs
 dist/
+.e2e-dist/
 artifacts/
+playwright-report/
+test-results/
 
 # logs
 *.log

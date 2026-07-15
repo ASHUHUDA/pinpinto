@@ -42,6 +42,15 @@ test('Firefox manifest uses a module background script and session-storage-compa
   assert.match(manifestSource, /service_worker: 'src\/background\.ts'/);
 });
 
+test('offscreen permission and Vite page entry are Chromium-only', async () => {
+  const manifestSource = await readWorkspaceFile('manifest.config.ts');
+  const viteSource = await readWorkspaceFile('vite.config.ts');
+
+  assert.match(manifestSource, /isFirefoxTarget \? basePermissions : \[\.\.\.basePermissions, 'sidePanel', 'offscreen'\]/);
+  assert.match(viteSource, /if \(!isFirefoxTarget\) pageInputs\.offscreen = 'offscreen\.html'/);
+  assert.match(viteSource, /__PINPINTO_BROWSER_TARGET__/);
+});
+
 test('cancel flows target current batch instead of indiscriminately canceling all downloads', async () => {
   const clientSource = await readWorkspaceFile('src/shared/batch-task-client.ts');
   const backgroundSource = await readWorkspaceFile('src/background.ts');
@@ -58,12 +67,14 @@ test('single-image downloads stay tagged outside batch cancellation flow', async
 
   assert.match(
     backgroundSource,
-    /this\.activeDownloads\.set\(downloadId,\s*\{[\s\S]*?isBatch: false,[\s\S]*?requestedFilename/
+    /this\.activeDownloads\.set\(downloadId,\s*\{[\s\S]*?isBatch: false,[\s\S]*?targetTabId:[\s\S]*?imageId:[\s\S]*?requestedFilename/
   );
   assert.match(
     backgroundSource,
-    /case 'downloadImage':[\s\S]*?await this\.downloadSingleImage\(request\.imageData, request\.settings\);/
+    /case 'downloadImage':[\s\S]*?await this\.downloadSingleImage\([\s\S]*?sender\.tab\?\.id,[\s\S]*?request\.imageData\?\.id/
   );
+  assert.match(backgroundSource, /this\.singleDownloads\.register\(\{[\s\S]*?downloadId,[\s\S]*?targetTabId:[\s\S]*?imageId:/);
+  assert.doesNotMatch(backgroundSource, /setTimeout\([\s\S]*?activeDownloads\.delete\(downloadId\)[\s\S]*?30000/);
 });
 
 test('clear actions route through full page-session reset instead of deselect-only behavior', async () => {
@@ -124,6 +135,16 @@ test('content keeps the page image URL so background owns high-quality fallback 
 
   assert.match(contentSource, /url: this\.getOriginalImageUrl\(img\),/);
   assert.doesNotMatch(contentSource, /url: this\.getHighQualityUrl\(img\),/);
+});
+
+test('content entrypoint uses centralized discovery and exposes scoped settlement acknowledgements', async () => {
+  const contentSource = await readWorkspaceFile('src/content.ts');
+
+  assert.match(contentSource, /scanPinterestImages\(document,/);
+  assert.match(contentSource, /classifyPinterestImage\(window\.location\.href, img\)/);
+  assert.match(contentSource, /case 'commitAutoBatchWindow':[\s\S]*?this\.autoBatchSession\.commitWindow\(/);
+  assert.match(contentSource, /case 'settleSingleDownload':[\s\S]*?this\.settleSingleDownload\(/);
+  assert.match(contentSource, /settlement\.state === 'complete'[\s\S]*?this\.session\.removeDownloadedImage\(imageId\)/);
 });
 
 test('main code files remain below the 700-line AGENTS threshold', async () => {

@@ -10,6 +10,7 @@ export const BATCH_TASK_STORAGE_KEY = 'pinpintoBatchTask';
 type SessionStorageArea = {
     get: (key?: string) => Promise<Record<string, unknown>>;
     set: (value: Record<string, unknown>) => Promise<void>;
+    remove?: (key: string) => Promise<void>;
 };
 
 type BatchTaskManagerOptions = {
@@ -27,11 +28,10 @@ type StartTaskInput = {
     settings?: Record<string, unknown>;
 };
 
-const RESTART_INTERRUPTED_PHASES = new Set(['queued', 'fetching', 'compressing']);
-
 export class BatchTaskManager {
     private snapshot: BatchTaskSnapshot | null = null;
-    private persistQueue: Promise<void> = Promise.resolve();
+    private queue: Promise<unknown> = Promise.resolve();
+    private initialized = false;
     private readonly storage: SessionStorageArea;
     private readonly broadcast: (snapshot: BatchTaskSnapshot) => void | Promise<void>;
     private readonly now: () => number;
@@ -46,71 +46,136 @@ export class BatchTaskManager {
     }
 
     async initialize(): Promise<BatchTaskSnapshot | null> {
-        const stored = await this.storage.get(BATCH_TASK_STORAGE_KEY);
-        const candidate = stored[BATCH_TASK_STORAGE_KEY] as BatchTaskSnapshot | undefined;
-        this.snapshot = candidate?.jobId ? {
-            ...candidate,
-            targetTabId: typeof candidate.targetTabId === 'number' ? candidate.targetTabId : null,
-            associatedDownloadIds: Array.isArray(candidate.associatedDownloadIds) ? candidate.associatedDownloadIds : [],
-            pendingFallbackDownloadIds: Array.isArray(candidate.pendingFallbackDownloadIds) ? candidate.pendingFallbackDownloadIds : [],
-            autoBatchLimit: Math.max(1, Math.floor(candidate.autoBatchLimit ?? 100)),
-            settings: candidate.settings ?? {}
-        } : null;
-
-        if (this.snapshot && RESTART_INTERRUPTED_PHASES.has(this.snapshot.phase)) {
-            await this.update(this.snapshot.jobId, {
-                phase: 'interrupted',
-                progress: 100,
-                details: '后台任务在抓图或压缩阶段被中断，可重新开始。'
-            });
-        }
-
-        return this.getSnapshot();
+        return this.enqueue(async () => {
+            if (this.initialized) return this.cloneSnapshot();
+            const stored = await this.storage.get(BATCH_TASK_STORAGE_KEY);
+            const candidate = stored[BATCH_TASK_STORAGE_KEY] as BatchTaskSnapshot | undefined;
+            this.snapshot = candidate?.jobId ? normalizeSnapshot(candidate) : null;
+            this.initialized = true;
+            if (this.snapshot?.phase === 'completed') {
+                await this.broadcast(this.cloneSnapshot()!);
+                this.snapshot = null;
+                if (this.storage.remove) await this.storage.remove(BATCH_TASK_STORAGE_KEY);
+                else await this.storage.set({ [BATCH_TASK_STORAGE_KEY]: null });
+            }
+            return this.cloneSnapshot();
+        });
     }
 
     async start(input: StartTaskInput): Promise<BatchStartResult> {
-        if (this.snapshot && !isTerminalBatchPhase(this.snapshot.phase)) {
-            return {
-                accepted: false,
-                jobId: this.snapshot.jobId,
-                reason: 'batch-task-running'
-            };
-        }
+        return this.enqueue(async () => {
+            if (this.snapshot && !isTerminalBatchPhase(this.snapshot.phase)) {
+                return {
+                    accepted: false,
+                    jobId: this.snapshot.jobId,
+                    reason: 'batch-task-running'
+                };
+            }
 
-        const now = this.now();
-        const jobId = this.createJobId();
-        this.snapshot = {
-            jobId,
-            mode: input.mode,
-            targetTabId: typeof input.targetTabId === 'number' ? input.targetTabId : null,
-            phase: 'queued',
-            batchCursor: 0,
-            progress: 0,
-            details: '任务已接受，正在准备。',
-            totalImages: Math.max(0, Math.floor(input.totalImages ?? 0)),
-            zippedCount: 0,
-            fallbackCount: 0,
-            unresolvedCount: 0,
-            associatedDownloadIds: [],
-            pendingFallbackDownloadIds: [],
-            autoSessionFinished: input.mode === 'manual',
-            autoBatchLimit: Math.max(1, Math.floor(input.autoBatchLimit ?? 100)),
-            settings: input.settings ?? {},
-            createdAt: now,
-            updatedAt: now
-        };
-        await this.persistAndBroadcast();
-        return { accepted: true, jobId };
+            const now = this.now();
+            const jobId = this.createJobId();
+            this.snapshot = {
+                jobId,
+                mode: input.mode,
+                targetTabId: typeof input.targetTabId === 'number' ? input.targetTabId : null,
+                phase: 'queued',
+                batchCursor: 0,
+                progress: 0,
+                details: '任务已接受，正在准备。',
+                totalImages: Math.max(0, Math.floor(input.totalImages ?? 0)),
+                zippedCount: 0,
+                fallbackCount: 0,
+                unresolvedCount: 0,
+                associatedDownloadIds: [],
+                pendingFallbackDownloadIds: [],
+                activeWindow: null,
+                autoSessionFinished: input.mode === 'manual',
+                autoBatchLimit: Math.max(1, Math.floor(input.autoBatchLimit ?? 100)),
+                settings: input.settings ?? {},
+                createdAt: now,
+                updatedAt: now
+            };
+            await this.persistAndBroadcastCurrent();
+            return { accepted: true, jobId };
+        });
     }
 
     async update(
         jobId: string,
         patch: Partial<Omit<BatchTaskSnapshot, 'jobId' | 'createdAt'>>
     ): Promise<BatchTaskSnapshot | null> {
-        if (!this.snapshot || this.snapshot.jobId !== jobId) {
-            return null;
-        }
+        return this.enqueue(async () => {
+            if (!this.snapshot || this.snapshot.jobId !== jobId) return null;
+            this.applyPatch(jobId, patch);
+            await this.persistAndBroadcastCurrent();
+            return this.cloneSnapshot();
+        });
+    }
 
+    async mutate(
+        jobId: string,
+        updater: (snapshot: BatchTaskSnapshot) => Partial<Omit<BatchTaskSnapshot, 'jobId' | 'createdAt'>>
+    ): Promise<BatchTaskSnapshot | null> {
+        return this.enqueue(async () => {
+            if (!this.snapshot || this.snapshot.jobId !== jobId) return null;
+            this.applyPatch(jobId, updater(this.cloneSnapshot()!));
+            await this.persistAndBroadcastCurrent();
+            return this.cloneSnapshot();
+        });
+    }
+
+    async cancel(jobId?: string): Promise<BatchTaskSnapshot | null> {
+        return this.enqueue(async () => {
+            if (!this.snapshot || isTerminalBatchPhase(this.snapshot.phase)) return null;
+            if (jobId && this.snapshot.jobId !== jobId) return null;
+            this.applyPatch(this.snapshot.jobId, {
+                phase: 'cancelled',
+                progress: 100,
+                details: '任务已取消。',
+                autoSessionFinished: true
+            });
+            await this.persistAndBroadcastCurrent();
+            return this.cloneSnapshot();
+        });
+    }
+
+    async clearCompleted(
+        jobId: string,
+        finalPatch?: Partial<Omit<BatchTaskSnapshot, 'jobId' | 'createdAt'>>,
+        beforeClear?: (snapshot: BatchTaskSnapshot) => boolean | Promise<boolean>
+    ): Promise<boolean> {
+        return this.enqueue(async () => {
+            if (!this.snapshot || this.snapshot.jobId !== jobId) return false;
+            const previousSnapshot = this.cloneSnapshot();
+            if (finalPatch) this.applyPatch(jobId, { ...finalPatch, phase: 'completed' });
+            if (this.snapshot.phase !== 'completed') return false;
+            const finalSnapshot = this.cloneSnapshot()!;
+            await this.broadcast(finalSnapshot);
+            try {
+                if (beforeClear && await beforeClear(finalSnapshot) !== true) {
+                    this.snapshot = previousSnapshot;
+                    return false;
+                }
+            } catch {
+                this.snapshot = previousSnapshot;
+                return false;
+            }
+            this.snapshot = null;
+            if (this.storage.remove) await this.storage.remove(BATCH_TASK_STORAGE_KEY);
+            else await this.storage.set({ [BATCH_TASK_STORAGE_KEY]: null });
+            return true;
+        });
+    }
+
+    getSnapshot(): BatchTaskSnapshot | null {
+        return this.cloneSnapshot();
+    }
+
+    private applyPatch(
+        jobId: string,
+        patch: Partial<Omit<BatchTaskSnapshot, 'jobId' | 'createdAt'>>
+    ): void {
+        if (!this.snapshot) return;
         this.snapshot = {
             ...this.snapshot,
             ...patch,
@@ -118,46 +183,40 @@ export class BatchTaskManager {
             createdAt: this.snapshot.createdAt,
             updatedAt: this.now()
         };
-        await this.persistAndBroadcast();
-        return this.getSnapshot();
     }
 
-    async mutate(
-        jobId: string,
-        updater: (snapshot: BatchTaskSnapshot) => Partial<Omit<BatchTaskSnapshot, 'jobId' | 'createdAt'>>
-    ): Promise<BatchTaskSnapshot | null> {
-        if (!this.snapshot || this.snapshot.jobId !== jobId) return null;
-        const patch = updater(this.getSnapshot()!);
-        return this.update(jobId, patch);
+    private async persistAndBroadcastCurrent(): Promise<void> {
+        const snapshot = this.cloneSnapshot();
+        if (!snapshot) return;
+        await this.storage.set({ [BATCH_TASK_STORAGE_KEY]: snapshot });
+        await this.broadcast(snapshot);
     }
 
-    async cancel(jobId?: string): Promise<BatchTaskSnapshot | null> {
-        if (!this.snapshot || isTerminalBatchPhase(this.snapshot.phase)) {
-            return null;
-        }
-        if (jobId && this.snapshot.jobId !== jobId) {
-            return null;
-        }
-
-        return this.update(this.snapshot.jobId, {
-            phase: 'cancelled',
-            progress: 100,
-            details: '任务已取消。',
-            autoSessionFinished: true
-        });
-    }
-
-    getSnapshot(): BatchTaskSnapshot | null {
+    private cloneSnapshot(): BatchTaskSnapshot | null {
         return this.snapshot ? structuredClone(this.snapshot) : null;
     }
 
-    private async persistAndBroadcast(): Promise<void> {
-        if (!this.snapshot) return;
-        const snapshot = this.getSnapshot()!;
-        this.persistQueue = this.persistQueue.then(async () => {
-            await this.storage.set({ [BATCH_TASK_STORAGE_KEY]: snapshot });
-            await this.broadcast(snapshot);
-        });
-        await this.persistQueue;
+    private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+        const result = this.queue.then(operation, operation);
+        this.queue = result.then(() => undefined, () => undefined);
+        return result;
     }
+}
+
+function normalizeSnapshot(candidate: BatchTaskSnapshot): BatchTaskSnapshot {
+    return {
+        ...candidate,
+        targetTabId: typeof candidate.targetTabId === 'number' ? candidate.targetTabId : null,
+        associatedDownloadIds: uniqueNumbers(candidate.associatedDownloadIds),
+        pendingFallbackDownloadIds: uniqueNumbers(candidate.pendingFallbackDownloadIds),
+        activeWindow: candidate.activeWindow ?? null,
+        autoBatchLimit: Math.max(1, Math.floor(candidate.autoBatchLimit ?? 100)),
+        settings: candidate.settings ?? {}
+    };
+}
+
+function uniqueNumbers(values: unknown): number[] {
+    return Array.isArray(values)
+        ? [...new Set(values.filter((value): value is number => Number.isInteger(value)))]
+        : [];
 }

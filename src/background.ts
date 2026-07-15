@@ -1,7 +1,11 @@
 // Background script for PinPinto Extension
 import { PINTEREST_MATCH_PATTERNS, isPinterestUrl as isPinterestPageUrl } from './shared/pinterest';
 import { BatchCoordinator, type TrackedDownloadInfo } from './background/batch-coordinator';
+import { createBlobJobHost } from './background/blob-host';
+import type { BlobJobHost } from './background/blob-runner';
+import { OFFSCREEN_MESSAGE_TARGET } from './background/offscreen-protocol';
 import { buildSingleDownloadPath } from './background/download-path';
+import { SingleDownloadRegistry } from './background/single-download-registry';
 import {
     getDownloadCandidateUrls as getDownloadCandidateUrlsHelper,
     getHighQualityUrl as getHighQualityUrlHelper,
@@ -23,17 +27,18 @@ import {
 
 class PinVaultProBackground {
     activeDownloads: Map<number, TrackedDownloadInfo>;
-    downloadQueue: any[];
-    isProcessingQueue: boolean;
     maxConcurrentDownloads: number;
+    blobHost: BlobJobHost;
     batchCoordinator: BatchCoordinator;
+    singleDownloads: SingleDownloadRegistry;
 
     constructor() {
         this.activeDownloads = new Map();
-        this.downloadQueue = [];
-        this.isProcessingQueue = false;
         this.maxConcurrentDownloads = 3;
+        const blobHost = createBlobJobHost();
+        this.blobHost = blobHost;
         this.batchCoordinator = new BatchCoordinator({
+            blobHost,
             activeDownloads: this.activeDownloads,
             maxConcurrentDownloads: this.maxConcurrentDownloads,
             normalizeImageUrlForDeduplication: (image, settings) => this.normalizeImageUrlForDeduplication(image, settings),
@@ -42,6 +47,18 @@ class PinVaultProBackground {
             extractFilenameFromUrl: (url) => this.extractFilenameFromUrl(url),
             formatLocalTimestamp: () => this.formatLocalTimestamp(),
             broadcast: (message) => this.sendMessageToAllExtensionPages(message)
+        });
+        this.singleDownloads = new SingleDownloadRegistry({
+            notify: async (record, state, error) => {
+                if (record.targetTabId === null || !record.imageId) return;
+                await chrome.tabs.sendMessage(record.targetTabId, {
+                    action: 'settleSingleDownload',
+                    imageId: record.imageId,
+                    state,
+                    error
+                });
+            },
+            onRemoved: (record) => this.activeDownloads.delete(record.downloadId)
         });
 
         this.init();
@@ -75,6 +92,7 @@ class PinVaultProBackground {
 
         // Message handling
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request?.target === OFFSCREEN_MESSAGE_TARGET) return false;
             this.handleMessage(request, sender, sendResponse);
             return true; // Keep channel open for async response
         });
@@ -85,6 +103,7 @@ class PinVaultProBackground {
         });
         chrome.tabs.onRemoved.addListener((tabId) => {
             void this.batchCoordinator.handleTargetTabClosed(tabId);
+            void this.singleDownloads.removeForTab(tabId);
         });
     }
 
@@ -156,13 +175,41 @@ class PinVaultProBackground {
 
     async handleMessage(request, sender, sendResponse) {
         try {
+            if (typeof __PINPINTO_E2E__ !== 'undefined'
+                && __PINPINTO_E2E__
+                && request.action === 'pinpintoE2EBlobProbe') {
+                const jobId = `e2e-probe-${Date.now()}`;
+                const urls = (Array.isArray(request.urls) ? request.urls : [request.url])
+                    .filter((url): url is string => typeof url === 'string' && url.length > 0);
+                await this.blobHost.start({
+                    jobId,
+                    maxConcurrency: 6,
+                    entries: urls.map((url, index) => ({
+                        imageId: `e2e-probe-${index + 1}`,
+                        sequence: index + 1,
+                        sourceUrl: url,
+                        candidateUrls: [url],
+                        filename: `probe-${index + 1}.svg`
+                    }))
+                });
+                const result = await this.blobHost.result(jobId);
+                await this.blobHost.release(jobId);
+                sendResponse({ success: true, result });
+                return;
+            }
+
             switch (request.action) {
                 case 'ping':
                     sendResponse({ status: 'ready', timestamp: Date.now() });
                     break;
 
                 case 'downloadImage':
-                    const downloadId = await this.downloadSingleImage(request.imageData, request.settings);
+                    const downloadId = await this.downloadSingleImage(
+                        request.imageData,
+                        request.settings,
+                        sender.tab?.id,
+                        request.imageData?.id
+                    );
                     sendResponse({ success: true, downloadId });
                     break;
 
@@ -298,7 +345,7 @@ class PinVaultProBackground {
         }
     }
 
-    async downloadSingleImage(imageData, settings) {
+    async downloadSingleImage(imageData, settings, targetTabId = null, imageId = null) {
         try {
             console.log('Starting download for:', imageData);
             const downloadUrl = settings?.highQuality === false
@@ -332,6 +379,15 @@ class PinVaultProBackground {
                 startTime: Date.now(),
                 status: 'downloading',
                 isBatch: false,
+                targetTabId: typeof targetTabId === 'number' ? targetTabId : null,
+                imageId: typeof imageId === 'string' && imageId ? imageId : null,
+                requestedFilename
+            });
+
+            await this.singleDownloads.register({
+                downloadId,
+                targetTabId: typeof targetTabId === 'number' ? targetTabId : null,
+                imageId: typeof imageId === 'string' && imageId ? imageId : null,
                 requestedFilename
             });
 
@@ -366,21 +422,6 @@ class PinVaultProBackground {
         }
     }
 
-    async cancelAllDownloads() {
-        const allDownloadIds = Array.from(this.activeDownloads.keys());
-        await Promise.all(
-            allDownloadIds.map(async (id) => {
-                try {
-                    await chrome.downloads.cancel(id);
-                } catch (error) {
-                    console.log('Skip cancel for download:', id, error instanceof Error ? error.message : error);
-                }
-            })
-        );
-        this.activeDownloads.clear();
-        await this.batchCoordinator.cancel();
-    }
-
     async sendMessageToAllExtensionPages(message) {
         try {
             // Send to runtime (popup)
@@ -402,45 +443,19 @@ class PinVaultProBackground {
         }
     }
 
-    async sendMessageToSidebar(message) {
-        // Use the unified method
-        await this.sendMessageToAllExtensionPages(message);
-    }
-
     handleDownloadChange(downloadDelta) {
         const downloadId = downloadDelta.id;
         const downloadInfo = this.activeDownloads.get(downloadId);
 
         this.batchCoordinator.handleDownloadChange(downloadDelta, downloadInfo);
-        if (!downloadInfo) return;
-
-        // Update download status
-        if (downloadDelta.state) {
-            downloadInfo.status = downloadDelta.state.current;
-
-            if (downloadDelta.state.current === 'complete') {
-                downloadInfo.endTime = Date.now();
-                downloadInfo.duration = downloadInfo.endTime - downloadInfo.startTime;
-
-                // Show completion log for single downloads
-                if (!downloadInfo.isBatch) {
-                    console.log('Download Complete:', typeof downloadInfo.imageData === 'string' ? downloadInfo.imageData : downloadInfo.imageData.title);
-                }
-
-                // Clean up
-                setTimeout(() => {
-                    this.activeDownloads.delete(downloadId);
-                }, 30000); // Keep for 30 seconds for stats
-
-            } else if (downloadDelta.state.current === 'interrupted') {
-                downloadInfo.error = downloadDelta.error || 'Download interrupted';
-
-                // Show error log
-                console.log('Download Failed:', typeof downloadInfo.imageData === 'string' ? downloadInfo.imageData : downloadInfo.imageData.title);
-
-                // Clean up
-                this.activeDownloads.delete(downloadId);
-            }
+        const state = downloadDelta.state?.current;
+        if (state !== 'complete' && state !== 'interrupted') return;
+        if (!downloadInfo?.isBatch) {
+            void this.singleDownloads.handleTerminal(
+                downloadId,
+                state,
+                downloadDelta.error?.current || (state === 'interrupted' ? 'Download interrupted' : undefined)
+            );
         }
     }
 

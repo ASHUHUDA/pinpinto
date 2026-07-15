@@ -27,13 +27,6 @@ type PopupSettings = {
     autoBatchDownload: boolean;
     autoBatchLimit: number;
     theme: string;
-    advancedFeaturesEnabled: boolean;
-    smartFeaturesEnabled: boolean;
-    autoDownloadScheduler: boolean;
-    batchProcessing: boolean;
-    imageSizeFilter: string;
-    duplicateDetection: boolean;
-    customWatermark: boolean;
 };
 
 const SIDEBAR_TARGET_TAB_KEY = 'pinVaultSidebarTargetTabId';
@@ -80,14 +73,7 @@ class PinVaultProPopup {
         const settings = (await chrome.storage.sync.get({
             language: 'en',
             ...SHARED_DOWNLOAD_SETTINGS_DEFAULTS,
-            theme: 'default',
-            advancedFeaturesEnabled: true,
-            smartFeaturesEnabled: false,
-            autoDownloadScheduler: false,
-            batchProcessing: false,
-            imageSizeFilter: 'all',
-            duplicateDetection: true,
-            customWatermark: false
+            theme: 'default'
         })) as PopupSettings;
 
         this.language = normalizeLanguage(settings.language);
@@ -106,21 +92,6 @@ class PinVaultProPopup {
         if (themeSelector) {
             themeSelector.value = settings.theme;
         }
-
-        await this.toggleAdvancedFeatures(settings.advancedFeaturesEnabled);
-        await this.toggleSmartFeatures(settings.smartFeaturesEnabled);
-
-        const autoDownloadEl = document.getElementById('autoDownloadScheduler') as HTMLInputElement | null;
-        const batchProcessingEl = document.getElementById('batchProcessing') as HTMLInputElement | null;
-        const imageSizeFilterEl = document.getElementById('imageSizeFilter') as HTMLSelectElement | null;
-        const duplicateDetectionEl = document.getElementById('duplicateDetection') as HTMLInputElement | null;
-        const customWatermarkEl = document.getElementById('customWatermark') as HTMLInputElement | null;
-
-        if (autoDownloadEl) autoDownloadEl.checked = settings.autoDownloadScheduler;
-        if (batchProcessingEl) batchProcessingEl.checked = settings.batchProcessing;
-        if (imageSizeFilterEl) imageSizeFilterEl.value = settings.imageSizeFilter;
-        if (duplicateDetectionEl) duplicateDetectionEl.checked = settings.duplicateDetection;
-        if (customWatermarkEl) customWatermarkEl.checked = settings.customWatermark;
 
         this.setAutoScrollUi(settings.autoScroll);
     }
@@ -176,24 +147,6 @@ class PinVaultProPopup {
         if (themeSelector) {
             themeSelector.addEventListener('change', (e) => this.changeTheme((e.target as HTMLSelectElement).value));
         }
-
-        const advancedToggle = document.getElementById('advancedFeaturesToggle') as HTMLInputElement | null;
-        const smartToggle = document.getElementById('smartFeaturesToggle') as HTMLInputElement | null;
-
-        advancedToggle?.addEventListener('change', (e) => this.toggleAdvancedFeatures((e.target as HTMLInputElement).checked));
-        smartToggle?.addEventListener('change', (e) => this.toggleSmartFeatures((e.target as HTMLInputElement).checked));
-
-        const smartFeatureInputs = ['autoDownloadScheduler', 'batchProcessing', 'imageSizeFilter', 'duplicateDetection', 'customWatermark'];
-        smartFeatureInputs.forEach((id) => {
-            const element = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
-            if (!element) return;
-
-            if ((element as HTMLInputElement).type === 'checkbox') {
-                element.addEventListener('change', (e) => this.saveSetting(id, (e.target as HTMLInputElement).checked));
-            } else {
-                element.addEventListener('change', (e) => this.saveSetting(id, (e.target as HTMLSelectElement).value));
-            }
-        });
 
         document.getElementById('highQuality')?.addEventListener('change', (e) => {
             this.saveSetting('highQuality', (e.target as HTMLInputElement).checked);
@@ -517,34 +470,6 @@ class PinVaultProPopup {
         Object.entries(colors).forEach(([property, value]) => {
             document.documentElement.style.setProperty(property, value);
         });
-    }
-
-    async toggleAdvancedFeatures(enabled: boolean) {
-        const advancedPanel = document.getElementById('advancedFeaturesPanel');
-        if (advancedPanel) {
-            advancedPanel.style.display = enabled ? 'block' : 'none';
-        }
-
-        const advancedToggle = document.getElementById('advancedFeaturesToggle') as HTMLInputElement | null;
-        if (advancedToggle) {
-            advancedToggle.checked = enabled;
-        }
-
-        await this.saveSetting('advancedFeaturesEnabled', enabled);
-    }
-
-    async toggleSmartFeatures(enabled: boolean) {
-        const smartPanel = document.getElementById('smartFeaturesPanel');
-        if (smartPanel) {
-            smartPanel.style.display = enabled ? 'block' : 'none';
-        }
-
-        const smartToggle = document.getElementById('smartFeaturesToggle') as HTMLInputElement | null;
-        if (smartToggle) {
-            smartToggle.checked = enabled;
-        }
-
-        await this.saveSetting('smartFeaturesEnabled', enabled);
     }
 
     async saveSetting(key: string, value: any) {

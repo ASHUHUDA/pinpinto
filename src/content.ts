@@ -3,7 +3,15 @@ console.log('PinPinto content script: Starting to load...');
 
 import { createOverlayControls as createImageOverlayControls } from './content/overlay-controls';
 import { AutoBatchSessionController, restoreAutoBatchSession } from './content/auto-batch-session';
+import { classifyPinterestImage } from './content/image-classifier';
+import {
+    getHighQualityImageUrl,
+    getOriginalImageUrl,
+    isValidPinterestImage,
+    scanPinterestImages
+} from './content/image-scanner';
 import { ContentSessionStore } from './content/session-store';
+import { SingleDownloadController, type SingleDownloadSettlement } from './content/single-download-state';
 import { PINPINTO_CONTENT_STYLE_ID, PINPINTO_CONTENT_STYLE_TEXT } from './content/styles';
 
 export { };
@@ -29,6 +37,7 @@ if (window.pinVaultContentLoaded) {
         scanTimeout?: number;
         contextMenuImage?: HTMLImageElement | null;
         autoBatchSession: AutoBatchSessionController;
+        singleDownloads: SingleDownloadController;
 
         constructor() {
             this.session = new ContentSessionStore();
@@ -41,12 +50,18 @@ if (window.pinVaultContentLoaded) {
             this.maxScrollAttempts = 5;
             this.autoScrollStopReason = null;
             this.autoScrollStoppedAt = null;
+            this.singleDownloads = new SingleDownloadController();
             this.autoBatchSession = new AutoBatchSessionController({
                 scanForImages: () => this.scanForImages(),
                 getTotalImages: () => this.session.imageOrder.length,
                 getImagesInRange: (startIndex, endIndex) => this.getImagesInRange(startIndex, endIndex),
                 getViewportAnchorIndex: () => this.getViewportAnchorIndex(),
                 discardImagesBeforeIndex: (startIndex) => this.discardImagesBeforeIndex(startIndex),
+                prepareAutoBatchSession: (startIndex) => this.session.prepareAutoBatchSession(startIndex),
+                getAutoEligibleWindow: (cursor, limit, exhausted) => (
+                    this.session.getAutoEligibleWindow(cursor, limit, exhausted, window.location.href)
+                ),
+                commitAutoBatchWindow: (input) => this.session.commitAutoBatchWindow(input),
                 startAutoScroll: () => this.startAutoScroll(),
                 stopAutoScroll: () => this.stopAutoScroll('manual'),
                 getAutoScrollStopReason: () => this.autoScrollStopReason,
@@ -186,6 +201,21 @@ if (window.pinVaultContentLoaded) {
                             });
                             break;
 
+                        case 'commitAutoBatchWindow':
+                            sendResponse(this.autoBatchSession.commitWindow({
+                                jobId: request.jobId,
+                                startOffset: request.startOffset,
+                                endOffset: request.endOffset
+                            }));
+                            break;
+
+                        case 'settleSingleDownload':
+                            sendResponse(this.settleSingleDownload(
+                                request.imageId,
+                                { state: request.state, error: request.error }
+                            ));
+                            break;
+
                         case 'clearAllImages':
                             this.clearAllImages();
                             sendResponse({ success: true });
@@ -211,38 +241,7 @@ if (window.pinVaultContentLoaded) {
         scanForImages() {
             console.log('PinPinto: Scanning for images...');
             const beforeCount = this.session.imageElements.size;
-
-            // Pinterest uses various selectors for images
-            const selectors = [
-                'img[src*="pinimg.com"]',
-                'img[data-src*="pinimg.com"]',
-                'img[srcset*="pinimg.com"]',
-                'picture source[srcset*="pinimg.com"]',
-                '[data-test-id="pin"] img',
-                '[data-test-id="visual-search-pin"] img',
-                '.GrowthUnauthPin img',
-                '.Pin img',
-                '.pinWrapper img'
-            ];
-
-            selectors.forEach(selector => {
-                document.querySelectorAll(selector).forEach(el => {
-                    const htmlEl = el as HTMLElement;
-                    if (htmlEl.tagName.toLowerCase() === 'source') {
-                        const img = htmlEl.closest('picture')?.querySelector('img') || htmlEl.closest('div')?.querySelector('img');
-                        if (img && !img.dataset.pinvaultProcessed) this.processImage(img as HTMLImageElement);
-                    } else if (!htmlEl.dataset.pinvaultProcessed) {
-                        this.processImage(htmlEl as HTMLImageElement);
-                    }
-                });
-            });
-
-            // Also scan for any newly loaded images that might not match selectors
-            document.querySelectorAll('img').forEach(img => {
-                if (this.isValidPinterestImage(img) && !img.dataset.pinvaultProcessed) {
-                    this.processImage(img);
-                }
-            });
+            scanPinterestImages(document, (image) => this.processImage(image));
 
             const afterCount = this.session.imageElements.size;
             const newImages = afterCount - beforeCount;
@@ -302,27 +301,13 @@ if (window.pinVaultContentLoaded) {
                 board: this.extractBoardName(),
                 domain: window.location.hostname,
                 originalFilename: this.extractOriginalFilename(img),
-                sourceKey
+                sourceKey,
+                source: classifyPinterestImage(window.location.href, img)
             });
         }
 
         isValidPinterestImage(img: HTMLImageElement) {
-            const src = img.src || img.dataset.src || (img as any).srcset || '';
-
-            // Check if it's a Pinterest image
-            if (!src.includes('pinimg.com')) return false;
-
-            // Skip avatars, icons, and very small images
-            const width = img.naturalWidth || img.width || img.clientWidth || 0;
-            const height = img.naturalHeight || img.height || img.clientHeight || 0;
-
-            if (width > 0 && width < 100) return false;
-            if (height > 0 && height < 100) return false;
-
-            // Skip if it's likely a profile picture or icon
-            if (src.includes('/avatars/') || src.includes('/user/')) return false;
-
-            return true;
+            return isValidPinterestImage(img);
         }
 
         getImageSourceKey(img: HTMLImageElement) {
@@ -374,27 +359,23 @@ if (window.pinVaultContentLoaded) {
         }
 
         createOverlayControls(imageId) {
-            return createImageOverlayControls(imageId, {
+            const controls = createImageOverlayControls(imageId, {
                 onToggleSelection: () => this.toggleImageSelection(imageId),
                 onDownloadSingle: (button) => this.downloadSingleImage(imageId, button)
             });
+            const button = controls.controls.querySelector('.pinvault-single-download-btn');
+            if (button instanceof HTMLButtonElement) this.singleDownloads.register(imageId, button);
+            return controls;
         }
 
-        async downloadSingleImage(imageId, singleDownloadBtn) {
+        async downloadSingleImage(imageId: string, singleDownloadBtn: HTMLButtonElement) {
             const imageData = this.session.imageElements.get(imageId);
-            if (!imageData) {
-                return;
-            }
-
-            singleDownloadBtn.classList.remove('success', 'error');
-            singleDownloadBtn.disabled = true;
-
-            try {
+            if (!imageData) return;
+            await this.singleDownloads.start(imageId, singleDownloadBtn, async () => {
                 const settings = await chrome.storage.sync.get({
                     highQuality: true
                 });
-
-                const response = await chrome.runtime.sendMessage({
+                return chrome.runtime.sendMessage({
                     action: 'downloadImage',
                     imageData: {
                         id: imageId,
@@ -406,41 +387,15 @@ if (window.pinVaultContentLoaded) {
                     },
                     settings
                 });
-
-                if (response?.success) {
-                    singleDownloadBtn.classList.add('success');
-                } else {
-                    singleDownloadBtn.classList.add('error');
-                }
-            } catch (error) {
-                console.error('PinPinto single image download failed:', error);
-                singleDownloadBtn.classList.add('error');
-            } finally {
-                singleDownloadBtn.disabled = false;
-                window.setTimeout(() => {
-                    singleDownloadBtn.classList.remove('success', 'error');
-                }, 1600);
-            }
+            });
         }
 
         getHighQualityUrl(img) {
-            let url = this.getOriginalImageUrl(img);
-
-            // Convert to highest quality Pinterest URL
-            // Pinterest URL pattern: https://i.pinimg.com/564x/...
-            // High quality: https://i.pinimg.com/originals/...
-
-            if (url.includes('pinimg.com')) {
-                // Replace size parameters with 'originals' for highest quality
-                url = url.replace(/\/\d+x\//, '/originals/');
-                url = url.replace(/\/\d+x\d+\//, '/originals/');
-            }
-
-            return url;
+            return getHighQualityImageUrl(img);
         }
 
         getOriginalImageUrl(img: HTMLImageElement) {
-            return img.currentSrc || img.src || img.dataset.src || '';
+            return getOriginalImageUrl(img);
         }
 
         extractImageTitle(container) {
@@ -502,7 +457,8 @@ if (window.pinVaultContentLoaded) {
         }
 
         clearAllImages() {
-            this.stopAutoScroll('manual');
+            this.autoBatchSession.reset();
+            this.singleDownloads.clear();
             this.session.clearAllImages();
 
             window.dispatchEvent(new CustomEvent('pinvaultImagesUpdated', {
@@ -670,6 +626,30 @@ if (window.pinVaultContentLoaded) {
 
         markImageStatus(imageId, status, error = null) {
             this.session.markImageStatus(imageId, status, error);
+        }
+
+        settleSingleDownload(imageId: string, settlement: SingleDownloadSettlement) {
+            if (typeof imageId !== 'string' || !imageId) {
+                return { success: false, removed: false, error: 'Missing imageId.' };
+            }
+            if (!['complete', 'rejected', 'interrupted'].includes(settlement.state)) {
+                return { success: false, removed: false, error: 'Invalid settlement state.' };
+            }
+            const state = this.singleDownloads.settle(imageId, settlement);
+            const removed = settlement.state === 'complete'
+                ? this.session.removeDownloadedImage(imageId)
+                : false;
+            if (removed) {
+                this.singleDownloads.remove(imageId);
+                window.dispatchEvent(new CustomEvent('pinvaultImagesUpdated', {
+                    detail: { total: this.session.imageElements.size, new: 0 }
+                }));
+            }
+            return {
+                success: settlement.state === 'complete' || state !== null,
+                removed,
+                imageId
+            };
         }
     }
 

@@ -44,6 +44,18 @@ corepack.cmd pnpm build
 
 # 同时生成 Chrome + Firefox 发布包
 corepack.cmd pnpm run build:browsers
+
+# 审计 Chrome / Firefox 生产包
+corepack.cmd pnpm run audit:production
+
+# 审计生产依赖漏洞
+corepack.cmd pnpm run audit:dependencies
+
+# 首次运行端到端测试前安装 Chromium
+corepack.cmd pnpm exec playwright install chromium
+
+# 运行确定性的扩展端到端测试
+corepack.cmd pnpm run test:e2e
 ```
 
 `build:browsers` 会把：
@@ -51,6 +63,10 @@ corepack.cmd pnpm run build:browsers
 - Firefox 包输出到 `artifacts/pinpinto-firefox-v*.xpi`
 - Firefox 构建最低支持版本为 115，以使用模块化后台脚本和 `storage.session`
 - 并且**保持 `dist` 仍然是 Chrome 构建结果**，避免把 Firefox manifest 误加载到 Chrome / Edge 里
+
+端到端测试使用隔离的 Chromium 配置目录和被拦截的 Pinterest 搜索页，不需要登录，也不会操作真实 Pinterest 账户。测试会验证推荐内容过滤、80 张尾批、ZIP/单图落盘、失败重试、成功清理、CSP 和无障碍状态；失败时保留报告、截图和 trace。
+
+首次安装 Playwright、完整门禁顺序、失败证据位置和只读线上 smoke 边界见 [测试指南](docs/testing.md)。
 
 ## 仓库结构
 - `src/background.ts`: 浏览器事件与消息入口
@@ -65,6 +81,8 @@ corepack.cmd pnpm run build:browsers
 
 ## 许可证
 MIT（见 [LICENSE](LICENSE)）
+
+PinPinto 与 Pinterest, Inc. 不隶属、无关联，也未获得其官方认可。请仅下载你有权获取的内容，并遵守适用法律、Pinterest 服务条款以及版权和其他知识产权要求。
 
 ---
 致敬上游项目：[inyogeshwar/pinvault-pro-extension](https://github.com/inyogeshwar/pinvault-pro-extension)
