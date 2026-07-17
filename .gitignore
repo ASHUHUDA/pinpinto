@@ -24,6 +24,9 @@ Thumbs.db
 .idea/
 .agent/
 
+# local session and browser profile data
+.omx/
+
 # planning artifacts
 task_plan.md
 findings.md
