@@ -37,6 +37,8 @@ test('Playwright extension suite, production audits, documentation, and Windows 
   assert.match(spec, /manual ZIP and individual modes/);
   assert.match(spec, /automatic graceful stop/);
   assert.match(spec, /toHaveText\('Retry'/);
+  assert.match(spec, /targetTabId:\s*tabId/);
+  assert.match(spec, /\/zip\/i\.test\(download\.mime\)/);
   assert.match(spec, /pinpintoBatchTask/);
   assert.match(spec, /cspErrors/);
   assert.match(spec, /pinpintoProgressValues/);

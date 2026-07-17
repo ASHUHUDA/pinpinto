@@ -154,8 +154,24 @@ test('single-image Blob retry falls back from failed original candidate and writ
   assetServer.rejectOriginals(false);
 });
 
-test('manual ZIP and individual modes save deterministic image bytes', async ({ openExtensionPage, assetServer }) => {
+test('manual ZIP and individual modes save deterministic image bytes', async ({
+  context,
+  openExtensionPage,
+  assetServer
+}) => {
+  await context.route('https://www.pinterest.com/search/pins/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: createPinterestSearchFixture(1, 0, assetServer.baseUrl)
+  }));
+  const targetPage = await context.newPage();
+  await targetPage.goto('https://www.pinterest.com/search/pins/?q=manual-download', {
+    waitUntil: 'domcontentloaded'
+  });
+  await expect.poll(() => targetPage.locator('.pinvault-overlay-controls').count()).toBe(1);
+
   const control = await openExtensionPage('popup.html');
+  const targetTabId = await findPinterestTabId(control);
   const images = Array.from({ length: 3 }, (_, index) => {
     const padded = String(index + 1).padStart(3, '0');
     return {
@@ -167,12 +183,13 @@ test('manual ZIP and individual modes save deterministic image bytes', async ({ 
   });
 
   const zipCheckpoint = await captureDownloadCheckpoint(control);
-  const zipStart = await control.evaluate(async (imagesForDownload) => chrome.runtime.sendMessage({
+  const zipStart = await control.evaluate(async ({ imagesForDownload, tabId }) => chrome.runtime.sendMessage({
     action: 'downloadImages',
     mode: 'manual',
+    targetTabId: tabId,
     images: imagesForDownload,
     settings: { highQuality: true, downloadAsZip: true, maxConcurrentDownloads: 3 }
-  }), images);
+  }), { imagesForDownload: images, tabId: targetTabId });
   expect(zipStart.accepted).toBe(true);
   const zipDownload = await waitForBatchZip(control, zipCheckpoint, 30_000, []);
   expect(basename(zipDownload.filename)).toMatch(/^PinPinto_\d{8}_\d{6}\.zip$/);
@@ -197,12 +214,13 @@ test('manual ZIP and individual modes save deterministic image bytes', async ({ 
   await waitForTaskSnapshot(control, (snapshot) => snapshot === null, 30_000);
 
   const individualCheckpoint = await captureDownloadCheckpoint(control);
-  const individualStart = await control.evaluate(async (imagesForDownload) => chrome.runtime.sendMessage({
+  const individualStart = await control.evaluate(async ({ imagesForDownload, tabId }) => chrome.runtime.sendMessage({
     action: 'downloadImages',
     mode: 'manual',
+    targetTabId: tabId,
     images: imagesForDownload,
     settings: { highQuality: true, downloadAsZip: false, maxConcurrentDownloads: 3 }
-  }), images);
+  }), { imagesForDownload: images, tabId: targetTabId });
   expect(individualStart.accepted).toBe(true);
   const downloads = await waitForNewCompletedDownloads(control, individualCheckpoint, {
     count: 3,
@@ -367,7 +385,8 @@ async function waitForBatchZip(
       download.state === 'complete'
       && download.exists === true
       && download.fileSize > 0
-      && download.mime === 'application/zip'
+      && /zip/i.test(download.mime)
+      && /\.zip$/i.test(download.filename)
     ));
     if (completedZip) return completedZip;
     if (['failed', 'cancelled', 'interrupted'].includes(evidence.snapshot?.phase)) {
