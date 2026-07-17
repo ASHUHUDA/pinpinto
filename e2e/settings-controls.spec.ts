@@ -1,15 +1,22 @@
-import type { Locator, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { test, expect } from './fixtures/extension';
+import { createPinterestSearchFixture } from './fixtures/pinterest-search';
 
 type BoundingBox = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+type OpenExtensionPage = (pagePath: string) => Promise<Page>;
 
 const surfaces = [
   { pagePath: 'popup.html', viewport: { width: 420, height: 760 } },
   { pagePath: 'sidebar.html', viewport: { width: 420, height: 900 } }
 ] as const;
 
-test('download settings persist from popup to sidebar and back to popup', async ({ openExtensionPage }) => {
-  const popup = await openExtensionPage('popup.html');
+test('download settings persist from popup to sidebar and back to popup', async ({
+  context,
+  openExtensionPage,
+  assetServer
+}) => {
+  const pinterestPage = await openPinterestFixture(context, assetServer.baseUrl);
+  const popup = await openConnectedExtensionPage(openExtensionPage, pinterestPage, 'popup.html');
   await seedSettings(popup, {
     language: 'en',
     downloadAsZip: true,
@@ -17,6 +24,7 @@ test('download settings persist from popup to sidebar and back to popup', async 
   });
   await popup.reload({ waitUntil: 'domcontentloaded' });
 
+  await expect(popup.locator('#downloadAsZip')).toBeVisible();
   await expect(popup.locator('#downloadAsZip')).toBeChecked();
   await expect(popup.locator('#singleImageDownloadMethod')).toHaveValue('browser');
   await popup.locator('#downloadAsZip').uncheck();
@@ -27,7 +35,7 @@ test('download settings persist from popup to sidebar and back to popup', async 
   });
   await popup.close();
 
-  const sidebar = await openExtensionPage('sidebar.html');
+  const sidebar = await openConnectedExtensionPage(openExtensionPage, pinterestPage, 'sidebar.html');
   await expect(sidebar.locator('#downloadAsZip')).not.toBeChecked();
   await expect(sidebar.locator('#singleImageDownloadMethod')).toHaveValue('external');
   await sidebar.locator('#downloadAsZip').check();
@@ -38,14 +46,15 @@ test('download settings persist from popup to sidebar and back to popup', async 
   });
   await sidebar.close();
 
-  const reopenedPopup = await openExtensionPage('popup.html');
+  const reopenedPopup = await openConnectedExtensionPage(openExtensionPage, pinterestPage, 'popup.html');
   await expect(reopenedPopup.locator('#downloadAsZip')).toBeChecked();
   await expect(reopenedPopup.locator('#singleImageDownloadMethod')).toHaveValue('browser');
 });
 
-test('localized download controls render one language at a time', async ({ openExtensionPage }) => {
+test('localized download controls render one language at a time', async ({ context, openExtensionPage, assetServer }) => {
+  const pinterestPage = await openPinterestFixture(context, assetServer.baseUrl);
   for (const { pagePath } of surfaces) {
-    const page = await openExtensionPage(pagePath);
+    const page = await openConnectedExtensionPage(openExtensionPage, pinterestPage, pagePath);
     await seedSettings(page, { language: 'en' });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expectLocalizedDownloadControls(page, 'en');
@@ -57,9 +66,14 @@ test('localized download controls render one language at a time', async ({ openE
   }
 });
 
-test('batch tooltip follows hover and focus without covering batch inputs', async ({ openExtensionPage }) => {
+test('batch tooltip follows hover and focus without covering batch inputs', async ({
+  context,
+  openExtensionPage,
+  assetServer
+}) => {
+  const pinterestPage = await openPinterestFixture(context, assetServer.baseUrl);
   for (const { pagePath, viewport } of surfaces) {
-    const page = await openExtensionPage(pagePath);
+    const page = await openConnectedExtensionPage(openExtensionPage, pinterestPage, pagePath);
     await page.setViewportSize(viewport);
     const infoButton = page.locator('#autoBatchInfoButton');
     const tooltip = page.locator('#autoBatchInfoTooltip');
@@ -85,6 +99,31 @@ test('batch tooltip follows hover and focus without covering batch inputs', asyn
     await page.close();
   }
 });
+
+async function openPinterestFixture(context: BrowserContext, imageBaseUrl: string): Promise<Page> {
+  await context.route('https://www.pinterest.com/search/pins/**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: createPinterestSearchFixture(1, 0, imageBaseUrl)
+  }));
+  const page = await context.newPage();
+  await page.goto('https://www.pinterest.com/search/pins/?q=settings-controls', {
+    waitUntil: 'domcontentloaded'
+  });
+  return page;
+}
+
+async function openConnectedExtensionPage(
+  openExtensionPage: OpenExtensionPage,
+  pinterestPage: Page,
+  pagePath: string
+): Promise<Page> {
+  const page = await openExtensionPage(pagePath);
+  await pinterestPage.bringToFront();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#downloadAsZip')).toBeVisible();
+  return page;
+}
 
 async function seedSettings(page: Page, settings: Record<string, unknown>): Promise<void> {
   await page.evaluate(async (values) => chrome.storage.sync.set(values), settings);

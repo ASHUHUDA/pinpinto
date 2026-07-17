@@ -62,6 +62,17 @@ export const test = base.extend<ExtensionFixtures>({
       ]
     });
 
+    const browser = context.browser();
+    if (!browser) throw new Error('Persistent Chromium context did not expose its browser instance.');
+    // Playwright otherwise stores accepted downloads under GUID filenames.
+    const browserSession = await browser.newBrowserCDPSession();
+    await browserSession.send('Browser.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: downloadsDir,
+      eventsEnabled: true
+    });
+    await browserSession.detach();
+
     await use(context);
     await context.close();
   },
