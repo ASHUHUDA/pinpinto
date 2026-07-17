@@ -18,6 +18,7 @@ test('content auto-batch session emits a full window, resumes, then emits the ex
     getViewportAnchorIndex() { return 4; },
     discardImagesBeforeIndex(index) { calls.push(`discard:${index}`); },
     startAutoScroll() { calls.push('start-scroll'); },
+    pauseAutoScroll() { calls.push('pause-scroll'); },
     stopAutoScroll() { calls.push('stop-scroll'); },
     getAutoScrollStopReason() { return exhausted ? 'exhausted' : null; },
     async sendMessage(message) {
@@ -70,6 +71,7 @@ test('content auto-batch session finishes an exhausted empty session and ignores
     getViewportAnchorIndex() { return 0; },
     discardImagesBeforeIndex() {},
     startAutoScroll() {},
+    pauseAutoScroll() {},
     stopAutoScroll() { stopCalls++; },
     getAutoScrollStopReason() { return 'exhausted'; },
     async sendMessage(message) { messages.push(message); return { success: true }; },
@@ -85,6 +87,74 @@ test('content auto-batch session finishes an exhausted empty session and ignores
   assert.deepEqual(messages, [{ action: 'finishAutoBatchSession', jobId: 'job-2' }]);
   assert.equal(controller.getJobId(), null);
   assert.equal(stopCalls, 1);
+});
+
+
+test('partial auto window waits for the configured batch count before scroll exhaustion', async () => {
+  const timers = [];
+  const messages = [];
+  const calls = [];
+  let availableRecords = [{ id: 'partial-1' }, { id: 'partial-2' }];
+  const { AutoBatchSessionController } = await loadTsModule('src/content/auto-batch-session.ts');
+  const controller = new AutoBatchSessionController({
+    scanForImages() {},
+    getTotalImages() { return availableRecords.length; },
+    getImagesInRange() { throw new Error('absolute eligible window should be used'); },
+    getViewportAnchorIndex() { return 0; },
+    discardImagesBeforeIndex() { throw new Error('prepareAutoBatchSession should be used'); },
+    prepareAutoBatchSession() { return { baseOffset: 0 }; },
+    getAutoEligibleWindow(cursor, limit, exhausted) {
+      calls.push({ cursor, limit, exhausted });
+      if (availableRecords.length < limit && !exhausted) return {
+        records: [],
+        startOffset: 0,
+        endOffset: 0,
+        finalWindow: false,
+        baseOffset: 0,
+        availableCount: availableRecords.length
+      };
+      return {
+        records: availableRecords.slice(0, limit),
+        startOffset: 0,
+        endOffset: Math.min(availableRecords.length, limit),
+        finalWindow: exhausted && availableRecords.length < limit,
+        baseOffset: 0,
+        availableCount: availableRecords.length
+      };
+    },
+    commitAutoBatchWindow() { throw new Error('not needed for emission test'); },
+    startAutoScroll() {},
+    pauseAutoScroll() {},
+    stopAutoScroll() {},
+    getAutoScrollStopReason() { return null; },
+    async sendMessage(message) {
+      messages.push(message);
+      return { accepted: true };
+    },
+    setInterval(callback) { timers.push(callback); return timers.length; },
+    clearInterval() {}
+  });
+
+  await controller.start({ jobId: 'job-limit', limit: 3, settings: {} });
+  for (let index = 0; index < 5; index++) await timers[0]();
+
+  assert.deepEqual(messages, []);
+
+  availableRecords = [{ id: 'full-1' }, { id: 'full-2' }, { id: 'full-3' }, { id: 'full-4' }];
+  await timers[0]();
+
+  assert.deepEqual(messages, [{
+    action: 'autoBatchWindowReady',
+    jobId: 'job-limit',
+    images: availableRecords.slice(0, 3),
+    settings: {},
+    startIndex: 0,
+    endIndex: 3,
+    finalWindow: false,
+    startOffset: 0,
+    endOffset: 3,
+    baseOffset: 0
+  }]);
 });
 
 test('content resume helper restores only the matching active auto task', async () => {
@@ -120,6 +190,7 @@ test('exhausted content session retries finish handshake until background accept
     getViewportAnchorIndex() { return 0; },
     discardImagesBeforeIndex() {},
     startAutoScroll() {},
+    pauseAutoScroll() {},
     stopAutoScroll() {},
     getAutoScrollStopReason() { return 'exhausted'; },
     async sendMessage() {
@@ -163,6 +234,7 @@ test('eligible auto windows use absolute offsets and only compact the matching j
       return { success: true, baseOffset: 22, retainedCount: 3, removedIds: ['old-1'] };
     },
     startAutoScroll() {},
+    pauseAutoScroll() {},
     stopAutoScroll() {},
     getAutoScrollStopReason() { return null; },
     async sendMessage(message) { messages.push(message); return { accepted: true }; },
@@ -209,4 +281,43 @@ test('eligible auto windows use absolute offsets and only compact the matching j
     jobId: 'job-absolute', startOffset: 20, endOffset: 22
   }), acknowledgement, 'duplicate commit delivery is idempotent');
   assert.equal(commits.length, 1);
+});
+
+test('batch pause preserves scroll intent and finish detaches before choosing resume or stop', async () => {
+  for (const continueAutoScroll of [true, false]) {
+    const calls = [];
+    const timers = [];
+    const clearedTimers = [];
+    const { AutoBatchSessionController } = await loadTsModule('src/content/auto-batch-session.ts');
+    const controller = new AutoBatchSessionController({
+      scanForImages() { calls.push('scan'); },
+      getTotalImages() { return 1; },
+      getImagesInRange() { return [{ id: 'new-image' }]; },
+      getViewportAnchorIndex() { return 0; },
+      discardImagesBeforeIndex() {},
+      startAutoScroll() { calls.push('start'); },
+      pauseAutoScroll() { calls.push('pause'); },
+      stopAutoScroll() { calls.push('stop'); },
+      getAutoScrollStopReason() { return null; },
+      async sendMessage() { return { accepted: true }; },
+      setInterval(callback) { timers.push(callback); return timers.length; },
+      clearInterval(timerId) { clearedTimers.push(timerId); }
+    });
+
+    await controller.start({ jobId: `job-finish-${continueAutoScroll}`, limit: 1, settings: {} });
+    await timers[0]();
+    assert.deepEqual(calls, ['start', 'scan', 'pause']);
+    assert.equal(controller.getJobId(), `job-finish-${continueAutoScroll}`);
+
+    controller.finish(`job-finish-${continueAutoScroll}`, { continueAutoScroll });
+
+    assert.equal(controller.getJobId(), null);
+    assert.deepEqual(clearedTimers, [1]);
+    assert.deepEqual(
+      calls,
+      continueAutoScroll
+        ? ['start', 'scan', 'pause', 'start']
+        : ['start', 'scan', 'pause', 'stop']
+    );
+  }
 });

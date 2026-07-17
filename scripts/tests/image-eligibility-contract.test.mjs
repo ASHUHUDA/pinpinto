@@ -10,7 +10,10 @@ function selectorFixture(kind) {
       if (kind === 'search-result' && /pingrid|search.?result/.test(normalized)) {
         return { selector };
       }
-      if (kind === 'recommendation' && /related|recommend|more.?like/.test(normalized)) {
+      if ((kind === 'pin-card' || kind === 'recommended-pin-card') && /data-test-id=["']pin["']|href\*=["']\/pin\//.test(normalized)) {
+        return { selector };
+      }
+      if ((kind === 'recommendation' || kind === 'recommended-pin-card') && /related|recommend|more.?like/.test(normalized)) {
         return { selector };
       }
       return null;
@@ -25,7 +28,9 @@ test('Pinterest source classifier separates search results from recommendations 
 
   const searchCard = selectorFixture('search-result');
   const recommendationCard = selectorFixture('recommendation');
+  const recommendedPinCard = selectorFixture('recommended-pin-card');
   const ordinaryCard = selectorFixture('page');
+  const pinCard = selectorFixture('pin-card');
 
   assert.equal(
     classifyPinterestImage('https://www.pinterest.com/search/pins/?q=desk', searchCard),
@@ -34,6 +39,16 @@ test('Pinterest source classifier separates search results from recommendations 
   assert.equal(
     classifyPinterestImage('https://www.pinterest.com/search/pins/?q=desk', recommendationCard),
     'recommendation'
+  );
+  assert.equal(
+    classifyPinterestImage('https://www.pinterest.com/search/pins/?q=desk', pinCard),
+    'search-result',
+    'plain Pin cards on search pages are primary results even when the grid wrapper selector drifts'
+  );
+  assert.equal(
+    classifyPinterestImage('https://www.pinterest.com/search/pins/?q=desk', recommendedPinCard),
+    'recommendation',
+    'recommendation containers still win when a related Pin also matches the generic Pin-card fallback'
   );
   assert.equal(
     classifyPinterestImage('https://www.pinterest.com/pin/123/', ordinaryCard),
@@ -78,6 +93,7 @@ test('automatic eligible windows exclude interleaved recommendations without mut
   assert.equal(window.startOffset, 0);
   assert.equal(window.endOffset, 3);
   assert.equal(window.finalWindow, false);
+  assert.equal(window.availableCount, 4);
   assert.equal(records.length, 6, 'recommendations remain available to overlays/manual/single flows');
 });
 
@@ -104,6 +120,76 @@ test('an exhausted 80-result tail is emitted as a partial batch and is never pad
   assert.equal(window.startOffset, 0);
   assert.equal(window.endOffset, 80);
   assert.equal(window.finalWindow, true);
+  assert.equal(window.availableCount, 80);
+});
+
+test('automatic eligible windows withhold partial batches before exhaustion', async () => {
+  const { buildAutoEligibleWindow } = await loadTsModule('src/content/eligible-window.ts');
+  const records = Array.from({ length: 34 }, (_, index) => ({
+    id: 'result-' + (index + 1),
+    source: 'search-result'
+  }));
+
+  const waitingWindow = buildAutoEligibleWindow(records, {
+    pageUrl: 'https://fi.pinterest.com/search/pins/?q=Purple%20avatar&rs=typed',
+    baseOffset: 0,
+    cursor: 0,
+    limit: 100,
+    exhausted: false
+  });
+
+  assert.deepEqual(waitingWindow.records, []);
+  assert.equal(waitingWindow.startOffset, 0);
+  assert.equal(waitingWindow.endOffset, 0);
+  assert.equal(waitingWindow.finalWindow, false);
+  assert.equal(waitingWindow.availableCount, 34);
+});
+
+
+test('page-session clear keeps removed sources ignored against delayed rescans', async () => {
+  const { ContentSessionStore } = await loadTsModule('src/content/session-store.ts');
+  const store = new ContentSessionStore();
+  const sourceKey = 'https://i.pinimg.com/originals/pinpinto-e2e/result-001.svg';
+  const removed = [];
+  const element = {
+    dataset: {},
+    setAttribute(name, value) {
+      this[name] = value;
+    }
+  };
+
+  store.addImage({
+    id: 'img-1',
+    element,
+    container: {
+      classList: {
+        remove(...tokens) {
+          removed.push(['container', ...tokens]);
+        }
+      }
+    },
+    controls: {
+      remove() {
+        removed.push(['controls']);
+      }
+    },
+    overlay: {},
+    url: sourceKey,
+    title: 'Result 001',
+    board: 'Pinterest',
+    domain: 'www.pinterest.com',
+    originalFilename: 'result-001.svg',
+    sourceKey,
+    source: 'search-result'
+  });
+
+  store.clearAllImages();
+
+  assert.equal(store.imageElements.size, 0);
+  assert.deepEqual(store.imageOrder, []);
+  assert.equal(store.isIgnoredSource(sourceKey), true);
+  assert.equal(element.dataset.pinvaultProcessed, 'ignored');
+  assert.deepEqual(removed.at(-1), ['controls']);
 });
 
 test('ten compacted windows preserve absolute ordinals and retain at most two batch limits of references', async () => {

@@ -1,0 +1,178 @@
+.download-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    padding: 9px 0;
+    color: var(--text-primary, var(--text-color, #222));
+    font-size: 13px;
+    letter-spacing: 0;
+}
+
+.download-setting-label {
+    min-width: 0;
+    color: var(--text-secondary, #999);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.download-toggle {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.download-toggle input[type="checkbox"] {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.download-toggle input[type="checkbox"]:focus-visible + .slider,
+.download-toggle input[type="checkbox"]:focus-visible + .toggle-track {
+    outline: 2px solid var(--accent-primary, #10b981);
+    outline-offset: 2px;
+}
+
+.download-method-select {
+    flex: 0 1 152px;
+    min-width: 0;
+    max-width: 52%;
+    height: 32px;
+    padding: 0 28px 0 9px;
+    border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.15));
+    border-radius: 6px;
+    background: var(--bg-base, #0c0c0e);
+    color: var(--text-primary, #f2f2f2);
+    color-scheme: dark;
+    font: inherit;
+    letter-spacing: 0;
+}
+
+.download-method-select:focus {
+    outline: none;
+    border-color: var(--accent-primary, #10b981);
+    box-shadow: 0 0 0 3px var(--accent-primary-dim, rgba(16, 185, 129, 0.15));
+}
+
+.download-method-select option {
+    background: var(--bg-base, #0c0c0e);
+    color: var(--text-primary, #f2f2f2);
+}
+
+.batch-limit-panel {
+    overflow: visible;
+}
+
+.settings-heading-with-info {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 7px;
+    min-width: 0;
+    min-height: 24px;
+    margin-bottom: 10px;
+}
+
+.settings-heading-with-info > :first-child {
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.batch-limit-panel .settings-heading-with-info .panel-title {
+    margin: 0;
+}
+
+.settings-info {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+.settings-info-button {
+    display: inline-grid;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-secondary, #666);
+    cursor: help;
+    line-height: 1;
+}
+
+.settings-info-button svg {
+    display: block;
+}
+
+.settings-info-button:hover,
+.settings-info-button:focus-visible {
+    color: var(--accent-primary, #10b981);
+    outline: 2px solid color-mix(in srgb, var(--accent-primary, #10b981) 35%, transparent);
+    outline-offset: 1px;
+}
+
+.settings-info-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.settings-tooltip {
+    position: absolute;
+    z-index: 30;
+    bottom: calc(100% + 7px);
+    left: 0;
+    width: min(220px, calc(100vw - 160px));
+    min-width: 160px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.15));
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg-base, #0c0c0e) 90%, white);
+    color: var(--text-primary, #f2f2f2);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.45;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(2px);
+    transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.settings-info:hover .settings-tooltip,
+.settings-info:focus-within .settings-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+@media (max-width: 380px) {
+    .download-setting-row {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .download-method-select {
+        flex-basis: 100%;
+        max-width: 100%;
+        width: 100%;
+    }
+}

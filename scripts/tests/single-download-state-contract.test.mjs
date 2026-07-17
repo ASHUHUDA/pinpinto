@@ -64,3 +64,20 @@ test('single start rejection and later interruption remain retryable with persis
   assert.equal(completedRetry.phase, 'complete');
   assert.equal(completedRetry.removeImageId, 'image-2');
 });
+
+test('external submission is terminal for the button but never removes the page image', async () => {
+  const {
+    createSingleDownloadState,
+    acceptSingleDownload,
+    settleSingleDownload
+  } = await loadTsModule('src/content/single-download-state.ts');
+
+  const pending = acceptSingleDownload(createSingleDownloadState('image-external')).state;
+  const submitted = settleSingleDownload(pending, { state: 'submitted' });
+
+  assert.equal(submitted.phase, 'submitted');
+  assert.equal(submitted.disabled, true);
+  assert.equal(submitted.error, null);
+  assert.equal(submitted.removeImageId, null);
+  assert.equal(acceptSingleDownload(submitted).accepted, false);
+});

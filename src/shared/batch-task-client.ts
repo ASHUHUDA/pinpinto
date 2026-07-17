@@ -43,6 +43,16 @@ export class BatchTaskClient {
         return response?.success === true;
     }
 
+    async stopAfterCurrent(continueAutoScroll: boolean): Promise<boolean> {
+        if (!this.currentJobId) return false;
+        const response = await chrome.runtime.sendMessage({
+            action: 'stopAutoBatchAfterCurrent',
+            jobId: this.currentJobId,
+            continueAutoScroll: continueAutoScroll === true
+        });
+        return response?.success === true;
+    }
+
     getJobId(): string | null {
         return this.currentJobId;
     }

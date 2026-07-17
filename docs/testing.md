@@ -44,7 +44,27 @@ What each gate proves:
 - `audit:dependencies`: installed production versions against npm bulk advisories and OSV.
 - `build:browsers`: Chrome ZIP and Firefox XPI generation.
 - `audit:production`: manifest/version/browser permissions and absence of E2E-only code in both production packages.
-- `test:e2e`: deterministic search classification, 80-image ZIP contents, browser-settled cleanup, retry, keyboard flow, CSP, and dynamic ARIA progress in Chromium.
+- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, and dynamic ARIA progress in Chromium.
+
+## Release Publication
+
+Use the repository release command from `main`:
+
+```powershell
+corepack.cmd pnpm run release:push
+```
+
+The command fetches `origin/main` and tags, refuses a behind or diverged branch, increments the patch version, synchronizes all version locations, runs the release gates, stages the complete non-ignored worktree, creates an annotated tag, and atomically pushes `main` with the tag.
+
+To publish a version that has already been synchronized in the source files:
+
+```powershell
+corepack.cmd pnpm run release:push -- --version=1.5.12
+```
+
+`--skip-e2e` is reserved for an explicit manual-test handoff. It skips only the local Playwright run; the tag-triggered GitHub Release workflow still runs deterministic E2E and will not create the Release until that gate passes.
+
+If an atomic push fails, rerun the same command. The script recognizes a local tag pointing at `HEAD` with no matching remote tag and retries the same version instead of incrementing again.
 
 ## Failure Evidence
 
@@ -73,3 +93,12 @@ The live smoke is supplementary selector-drift evidence, not a CI gate:
 4. Record login, consent, network, or browser availability limitations separately.
 
 Deterministic fixtures own correctness and CI. A blocked live Pinterest smoke never replaces or weakens the deterministic E2E suite.
+
+## Optional External Downloader Smoke
+
+External downloaders such as IDM are outside PinPinto's controlled task state and are not CI gates:
+
+1. In Chrome with the downloader integration enabled, set **Single-image download** to **External downloader** and click one card-level download button.
+2. Confirm the request is submitted to the browser/downloader integration; do not treat the external client's eventual completion or cancellation as a PinPinto success condition.
+3. Disable or block the external integration and confirm PinPinto shows the immediate rejection guidance to switch back to Browser mode.
+4. Re-test Browser mode for the same card and confirm it uses the controlled Blob-backed browser path.

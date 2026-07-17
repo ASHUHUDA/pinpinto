@@ -1,4 +1,4 @@
-export type DownloadSettlementKind = 'zip' | 'fallback';
+export type DownloadSettlementKind = 'zip' | 'fallback' | 'individual';
 
 export type DownloadTerminalState = 'complete' | 'interrupted' | 'missing';
 

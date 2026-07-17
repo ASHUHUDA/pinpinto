@@ -18,6 +18,7 @@ export type AutoEligibleWindow<T> = {
     startOffset: number;
     endOffset: number;
     finalWindow: boolean;
+    availableCount: number;
 };
 
 function isSearchPage(pageUrl: string): boolean {
@@ -48,7 +49,8 @@ export function buildAutoEligibleWindow<T extends AutoEligibleRecord>(
             records: [],
             startOffset: cursor,
             endOffset: cursor,
-            finalWindow: false
+            finalWindow: false,
+            availableCount: available.length
         };
     }
 
@@ -57,6 +59,7 @@ export function buildAutoEligibleWindow<T extends AutoEligibleRecord>(
         records: windowRecords,
         startOffset: cursor,
         endOffset: cursor + windowRecords.length,
-        finalWindow: options.exhausted && windowRecords.length < limit
+        finalWindow: options.exhausted && windowRecords.length < limit,
+        availableCount: available.length
     };
 }

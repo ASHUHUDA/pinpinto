@@ -14,7 +14,7 @@ export type TrackedDownloadInfo = {
     startTime: number;
     status: string;
     isBatch: boolean;
-    batchKind?: 'zip' | 'fallback';
+    batchKind?: 'zip' | 'fallback' | 'individual';
     blobLeaseJobId?: string;
     jobId?: string;
     targetTabId?: number | null;
@@ -36,6 +36,7 @@ export type BatchCoordinatorHost = {
     extractFilenameFromUrl: (url: string) => string;
     formatLocalTimestamp: () => string;
     broadcast: (message: Record<string, unknown>) => void | Promise<void>;
+    rememberRequestedFilename?: (url: string, requestedFilename: string) => void;
 };
 
 export type StartBatchRequest = {
@@ -46,6 +47,7 @@ export type StartBatchRequest = {
     targetTabId?: number;
     autoBatchLimit?: number;
     autoBatchTotalBatches?: number;
+    downloadAsZip?: boolean;
 };
 
 export type AutoBatchWindowRequest = {

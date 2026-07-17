@@ -9,10 +9,13 @@ type SidebarDownloadController = {
     updateStatsDisplay: (total: number, selected: number) => void;
     updateStats: () => Promise<void>;
     saveSetting: (key: string, value: unknown) => Promise<void>;
+    setAutoScrollUi: (enabled: boolean) => void;
+    setAutoBatchUi: (enabled: boolean) => void;
     startDownload: (options?: { autoBatchMode?: boolean; batchStartIndex?: number; batchEndIndex?: number }) => Promise<boolean>;
     toggleAutoScroll: (enabled: boolean) => Promise<void>;
     startBatchTask: (request: Record<string, unknown>) => Promise<{ accepted: boolean; jobId: string; reason?: string }>;
     cancelBatchTask: () => Promise<boolean>;
+    stopBatchAfterCurrent: (continueAutoScroll: boolean) => Promise<boolean>;
     t: (key: string) => string;
 };
 
@@ -42,14 +45,27 @@ function setAutoOptionsDisabled(controller: SidebarDownloadController) {
     setToggleChecked('autoBatchToggle', false);
 }
 
-async function getCurrentAutoBatchTotalBatches(controller: SidebarDownloadController, storedValue: unknown): Promise<number> {
-    const input = document.getElementById('autoBatchTotalBatches') as HTMLInputElement | null;
-    const totalBatches = normalizeAutoBatchTotalBatches(input?.value ?? storedValue);
-    if (input) input.value = totalBatches > 0 ? String(totalBatches) : '';
-    if (normalizeAutoBatchTotalBatches(storedValue) !== totalBatches) {
-        await controller.saveSetting('autoBatchTotalBatches', totalBatches);
+function setGracefulStopUi(controller: SidebarDownloadController, continueAutoScroll: boolean) {
+    clearAutoScrollTimer(controller);
+    controller.setAutoScrollUi(continueAutoScroll);
+    controller.setAutoBatchUi(false);
+}
+
+export async function toggleAutoBatchDownload(controller: SidebarDownloadController, enabled: boolean) {
+    if (enabled) {
+        await controller.saveSetting('autoScroll', true);
+        await controller.saveSetting('autoBatchDownload', true);
+        controller.setAutoScrollUi(true);
+        controller.setAutoBatchUi(true);
+        await controller.toggleAutoScroll(true);
+        return;
     }
-    return totalBatches;
+
+    await controller.saveSetting('autoBatchDownload', false);
+    await controller.saveSetting('autoScroll', true);
+    controller.setAutoBatchUi(false);
+    controller.setAutoScrollUi(true);
+    await controller.stopBatchAfterCurrent(true);
 }
 
 export async function clearAllImagesOnPage(controller: SidebarDownloadController, tabId: number) {
@@ -58,6 +74,27 @@ export async function clearAllImagesOnPage(controller: SidebarDownloadController
     } catch {
         // ignore and continue with best effort
     }
+}
+
+
+async function getCurrentAutoBatchLimit(controller: SidebarDownloadController, storedValue: unknown): Promise<number> {
+    const input = document.getElementById('autoBatchLimit') as HTMLInputElement | null;
+    const limit = normalizeAutoBatchLimit(input?.value ?? storedValue);
+    if (input) input.value = String(limit);
+    if (normalizeAutoBatchLimit(storedValue) !== limit) {
+        await controller.saveSetting('autoBatchLimit', limit);
+    }
+    return limit;
+}
+
+async function getCurrentAutoBatchTotalBatches(controller: SidebarDownloadController, storedValue: unknown): Promise<number> {
+    const input = document.getElementById('autoBatchTotalBatches') as HTMLInputElement | null;
+    const totalBatches = normalizeAutoBatchTotalBatches(input?.value ?? storedValue);
+    if (input) input.value = totalBatches > 0 ? String(totalBatches) : '';
+    if (normalizeAutoBatchTotalBatches(storedValue) !== totalBatches) {
+        await controller.saveSetting('autoBatchTotalBatches', totalBatches);
+    }
+    return totalBatches;
 }
 
 export async function fallbackUpdateStats(controller: SidebarDownloadController, tabId: number) {
@@ -122,9 +159,13 @@ export async function toggleAutoScroll(
         const settings = await getSettings();
 
         if (!enabled) {
-            const shouldCancelBatchTask = controller.isBatchingNow || settings.autoBatchDownload === true;
-            if (shouldCancelBatchTask) {
-                await controller.cancelBatchTask();
+            const shouldStopBatchTask = controller.isBatchingNow || settings.autoBatchDownload === true;
+            if (shouldStopBatchTask) {
+                await controller.saveSetting('autoScroll', false);
+                await controller.saveSetting('autoBatchDownload', false);
+                setGracefulStopUi(controller, false);
+                await controller.stopBatchAfterCurrent(false);
+                return;
             }
 
             const tab = await controller.resolveTargetTab();
@@ -133,8 +174,10 @@ export async function toggleAutoScroll(
                 await chrome.tabs.sendMessage(tab.id, { action: 'stopAutoScroll' });
             }
 
-            setAutoOptionsDisabled(controller);
-            await saveAutoOptionsDisabled(controller);
+            clearAutoScrollTimer(controller);
+            controller.setAutoScrollUi(false);
+            controller.setAutoBatchUi(false);
+            await controller.saveSetting('autoScroll', false);
             setTimeout(() => controller.updateStats(), 500);
             return;
         }
@@ -192,13 +235,14 @@ export async function startDownload(
         const settings = await getSettings();
         if (autoBatchMode) {
             showProgress(controller);
+            const autoBatchLimit = await getCurrentAutoBatchLimit(controller, settings.autoBatchLimit);
             const autoBatchTotalBatches = await getCurrentAutoBatchTotalBatches(controller, settings.autoBatchTotalBatches);
-            const autoSettings = { ...settings, autoBatchTotalBatches };
+            const autoSettings = { ...settings, autoBatchLimit, autoBatchTotalBatches };
             const response = await controller.startBatchTask({
                 mode: 'auto',
                 targetTabId: tab.id,
                 settings: autoSettings,
-                autoBatchLimit: normalizeAutoBatchLimit(settings.autoBatchLimit),
+                autoBatchLimit,
                 autoBatchTotalBatches
             });
             if (!response.accepted) {
@@ -263,6 +307,7 @@ export async function startDownload(
             mode: 'manual',
             targetTabId: tab.id,
             images: selectedImages,
+            downloadAsZip: settings.downloadAsZip,
             settings
         });
         if (!response.accepted) {

@@ -8,7 +8,10 @@ export const PINTEREST_SEARCH_RESULT_SELECTORS = [
     '[data-test-id="pinGrid"]',
     '[data-test-id="search-results"]',
     '[data-test-id="searchResult"]',
-    '[data-test-id="pin-grid"]'
+    '[data-test-id="pin-grid"]',
+    '[data-test-id="pin"]',
+    '[data-test-id="visual-search-pin"]',
+    'a[href*="/pin/"]'
 ] as const;
 
 export const PINTEREST_RECOMMENDATION_SELECTORS = [

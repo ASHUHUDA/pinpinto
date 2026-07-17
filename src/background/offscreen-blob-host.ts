@@ -8,12 +8,31 @@ import {
 
 type OffscreenApi = typeof chrome.offscreen;
 
+type ExtensionRuntimeWithContexts = typeof chrome.runtime & {
+    getContexts?: (filter: {
+        contextTypes?: string[];
+        documentUrls?: string[];
+    }) => Promise<Array<{ contextType?: string; documentUrl?: string }>>;
+};
+
+type ClientsApi = {
+    matchAll?: () => Promise<Array<{ url?: string }>>;
+};
+
+type GlobalWithClients = typeof globalThis & {
+    clients?: ClientsApi;
+};
+
+const OFFSCREEN_CONTEXT_TYPE = 'OFFSCREEN_DOCUMENT';
+
 export class OffscreenBlobJobHost implements BlobJobHost {
     private documentPromise: Promise<void> | null = null;
 
     constructor(
         private readonly offscreen: OffscreenApi = chrome.offscreen,
-        private readonly sendMessage: (message: OffscreenBlobMessage) => Promise<OffscreenBlobResponse> = (message) => chrome.runtime.sendMessage(message)
+        private readonly sendMessage: (message: OffscreenBlobMessage) => Promise<OffscreenBlobResponse> = (message) => chrome.runtime.sendMessage(message),
+        private readonly runtime: ExtensionRuntimeWithContexts = chrome.runtime as ExtensionRuntimeWithContexts,
+        private readonly clientsApi: ClientsApi = (globalThis as GlobalWithClients).clients ?? {}
     ) {}
 
     async start(request: BlobJobRequest): Promise<BlobJobStatus> {
@@ -50,7 +69,7 @@ export class OffscreenBlobJobHost implements BlobJobHost {
     private async ensureDocument(): Promise<void> {
         if (!this.documentPromise) {
             this.documentPromise = (async () => {
-                if (await this.offscreen.hasDocument()) return;
+                if (await this.hasExistingDocument()) return;
                 await this.offscreen.createDocument({
                     url: OFFSCREEN_DOCUMENT_PATH,
                     reasons: [chrome.offscreen.Reason.BLOBS],
@@ -62,5 +81,28 @@ export class OffscreenBlobJobHost implements BlobJobHost {
             });
         }
         await this.documentPromise;
+    }
+
+    private async hasExistingDocument(): Promise<boolean> {
+        const offscreenUrl = this.runtime.getURL(OFFSCREEN_DOCUMENT_PATH);
+
+        if (typeof this.runtime.getContexts === 'function') {
+            const contexts = await this.runtime.getContexts({
+                contextTypes: [OFFSCREEN_CONTEXT_TYPE],
+                documentUrls: [offscreenUrl]
+            });
+            return contexts.some((context) => context.documentUrl === offscreenUrl);
+        }
+
+        if (typeof this.offscreen.hasDocument === 'function') {
+            return this.offscreen.hasDocument();
+        }
+
+        if (typeof this.clientsApi.matchAll === 'function') {
+            const matchedClients = await this.clientsApi.matchAll();
+            return matchedClients.some((client) => client.url === offscreenUrl);
+        }
+
+        return false;
     }
 }

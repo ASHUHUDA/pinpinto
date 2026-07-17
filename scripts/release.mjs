@@ -26,8 +26,7 @@ export function parseVersion(version) {
 }
 
 export function shouldCreateRelease(version, force) {
-  if (force) return true;
-  return version.minor > 0 && version.minor % 5 === 0 && version.patch === 0;
+  return force || version.major === 1;
 }
 
 export function runBuildBrowsers() {
@@ -95,12 +94,7 @@ export async function main() {
   const versionText = packageJson.version;
   const version = parseVersion(versionText);
 
-  if (!shouldCreateRelease(version, args.force)) {
-    console.log(
-      `[release] skipped for v${versionText}. Rule: release at 1.(5n).0 or run with --force.`
-    );
-    return;
-  }
+  shouldCreateRelease(version, args.force);
 
   console.log(`[release] building release artifacts for v${versionText}...`);
   runBuildBrowsers();

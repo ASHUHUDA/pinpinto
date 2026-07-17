@@ -1,7 +1,12 @@
 import { isPinterestUrl as isPinterestPageUrl, PINTEREST_MATCH_PATTERNS } from './shared/pinterest';
 import { bindSettingsMenuDismiss, closeSettingsMenu as closeSharedSettingsMenu, toggleSettingsMenu as toggleSharedSettingsMenu } from './shared/settings-menu';
 import { DEFAULT_LANGUAGE, normalizeLanguage, POPUP_STATIC_TRANSLATIONS, POPUP_STATUS_TRANSLATIONS, SupportedLanguage } from './shared/ui-translations';
-import { SHARED_DOWNLOAD_SETTINGS_DEFAULTS } from './shared/download-settings';
+import {
+    normalizeDownloadAsZip,
+    normalizeSingleImageDownloadMethod,
+    SHARED_DOWNLOAD_SETTINGS_DEFAULTS,
+    type SingleImageDownloadMethod
+} from './shared/download-settings';
 import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from './shared/download-batching';
 import { BatchTaskClient } from './shared/batch-task-client';
 import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
@@ -15,6 +20,7 @@ import {
     selectAllImages as selectAllPopupImages,
     showProgress as showPopupProgress,
     startDownload as startPopupDownload,
+    toggleAutoBatchDownload as togglePopupAutoBatchDownload,
     toggleAutoScroll as togglePopupAutoScroll,
     updateImageCounts as updatePopupImageCounts,
     updateProgress as updatePopupProgress
@@ -25,6 +31,8 @@ type PopupSettings = {
     highQuality: boolean;
     autoScroll: boolean;
     autoBatchDownload: boolean;
+    downloadAsZip: boolean;
+    singleImageDownloadMethod: SingleImageDownloadMethod;
     autoBatchLimit: number;
     autoBatchTotalBatches: number;
     theme: string;
@@ -80,6 +88,8 @@ class PinVaultProPopup {
         this.language = normalizeLanguage(settings.language);
         (document.getElementById('highQuality') as HTMLInputElement).checked = settings.highQuality;
         (document.getElementById('autoScrollToggle') as HTMLInputElement).checked = settings.autoScroll;
+        (document.getElementById('downloadAsZip') as HTMLInputElement).checked = normalizeDownloadAsZip(settings.downloadAsZip);
+        (document.getElementById('singleImageDownloadMethod') as HTMLSelectElement).value = normalizeSingleImageDownloadMethod(settings.singleImageDownloadMethod);
 
         const autoBatchToggle = document.getElementById('autoBatchToggle') as HTMLInputElement | null;
         if (autoBatchToggle) {
@@ -122,17 +132,8 @@ class PinVaultProPopup {
             this.toggleAutoScroll((e.target as HTMLInputElement).checked);
         });
 
-        document.getElementById('autoBatchToggle')?.addEventListener('change', async (e) => {
-            const checked = (e.target as HTMLInputElement).checked;
-            await this.saveSetting('autoBatchDownload', checked);
-
-            if (checked) {
-                this.setAutoScrollUi(true);
-                await this.saveSetting('autoScroll', true);
-                await this.toggleAutoScroll(true);
-            } else {
-                await this.toggleAutoScroll(false);
-            }
+        document.getElementById('autoBatchToggle')?.addEventListener('change', (e) => {
+            void this.toggleAutoBatchDownload((e.target as HTMLInputElement).checked);
         });
         document.getElementById('autoBatchLimit')?.addEventListener('change', (e) => {
             this.saveAutoBatchLimit((e.target as HTMLInputElement).value);
@@ -161,6 +162,12 @@ class PinVaultProPopup {
 
         document.getElementById('highQuality')?.addEventListener('change', (e) => {
             this.saveSetting('highQuality', (e.target as HTMLInputElement).checked);
+        });
+        document.getElementById('downloadAsZip')?.addEventListener('change', (e) => {
+            this.saveSetting('downloadAsZip', (e.target as HTMLInputElement).checked);
+        });
+        document.getElementById('singleImageDownloadMethod')?.addEventListener('change', (e) => {
+            this.saveSetting('singleImageDownloadMethod', normalizeSingleImageDownloadMethod((e.target as HTMLSelectElement).value));
         });
 
         document.getElementById('openPinterestBtn')?.addEventListener('click', () => this.openPinterest());
@@ -361,6 +368,7 @@ class PinVaultProPopup {
     async selectAllImages() { return selectAllPopupImages(this); }
     async deselectAllImages() { return deselectPopupImages(this); }
     async toggleAutoScroll(enabled: boolean) { return togglePopupAutoScroll(this, enabled); }
+    async toggleAutoBatchDownload(enabled: boolean) { return togglePopupAutoBatchDownload(this, enabled); }
 
     stopAutoScroll() {
         this.toggleAutoScroll(false);
@@ -418,20 +426,34 @@ class PinVaultProPopup {
     cancelDownload() { return cancelPopupDownload(this); }
     async startBatchTask(request: Record<string, unknown>) { return this.batchTaskClient.start(request); }
     async cancelBatchTask() { return this.batchTaskClient.cancel(); }
+    async stopBatchAfterCurrent(continueAutoScroll: boolean) { return this.batchTaskClient.stopAfterCurrent(continueAutoScroll); }
     showProgress() { return showPopupProgress(this); }
     hideProgress() { return hidePopupProgress(this); }
     updateProgress(progress: number, details: string) { return updatePopupProgress(this, progress, details); }
     async getSettings() { return getPopupSettings(); }
 
     applyBatchTaskSnapshot(snapshot: BatchTaskSnapshot) {
+        const terminal = isTerminalBatchPhase(snapshot.phase);
+        const stopping = snapshot.mode === 'auto' && snapshot.autoStopRequested === true;
+        const details = stopping && !terminal
+            ? this.staticTranslations[this.language]['state.autoStopPending']
+            : snapshot.details;
         this.showProgress();
-        this.updateProgress(snapshot.progress, snapshot.details);
-        this.isBatchingNow = !isTerminalBatchPhase(snapshot.phase);
-        if (isTerminalBatchPhase(snapshot.phase)) {
-            this.isAutoScrolling = false;
-            this.setAutoScrollUi(false);
+        this.updateProgress(snapshot.progress, details);
+        this.isBatchingNow = !terminal;
+        if (stopping && !terminal) {
+            this.isAutoScrolling = snapshot.continueAutoScrollAfterStop;
+            this.setAutoScrollUi(snapshot.continueAutoScrollAfterStop);
             this.setAutoBatchUi(false);
-            void this.saveSetting('autoScroll', false);
+        }
+        if (terminal) {
+            const continueAutoScroll = snapshot.phase === 'completed'
+                && stopping
+                && snapshot.continueAutoScrollAfterStop;
+            this.isAutoScrolling = continueAutoScroll;
+            this.setAutoScrollUi(continueAutoScroll);
+            this.setAutoBatchUi(false);
+            void this.saveSetting('autoScroll', continueAutoScroll);
             void this.saveSetting('autoBatchDownload', false);
             void this.updateImageCounts();
         }

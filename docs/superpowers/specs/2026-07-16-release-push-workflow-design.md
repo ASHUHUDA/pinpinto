@@ -2,7 +2,7 @@
 
 Date: 2026-07-16
 Audience: PinPinto maintainers
-Status: Approved direction, pending implementation
+Status: Implemented
 
 ## Goal
 
@@ -38,6 +38,8 @@ The release script will:
 8. Atomically push `main` and the tag to `origin`.
 
 The first release commit will therefore include all current functional changes and the release automation, while generated output under `dist/`, `artifacts/`, `.e2e-dist/`, `playwright-report/`, and `test-results/` remains ignored.
+
+When the user explicitly retains real interaction testing, `--skip-e2e` may omit the local Playwright run. The tag workflow still runs deterministic E2E and cannot publish the GitHub Release until it passes.
 
 ## Retry And Failure Behavior
 

@@ -41,6 +41,7 @@ type AutoBatchSessionDependencies = {
         autoBatchLimit: number;
     }) => ContentCommitResult;
     startAutoScroll: () => void;
+    pauseAutoScroll: () => void;
     stopAutoScroll: () => void;
     getAutoScrollStopReason: () => 'manual' | 'exhausted' | null;
     sendMessage: (message: Record<string, unknown>) => Promise<unknown>;
@@ -173,8 +174,11 @@ export class AutoBatchSessionController {
         return result;
     }
 
-    finish(jobId: string): void {
-        if (this.state?.jobId === jobId) this.stopSession();
+    finish(jobId: string, options: { continueAutoScroll?: boolean } = {}): void {
+        if (this.state?.jobId !== jobId) return;
+        this.detachSession();
+        if (options.continueAutoScroll === true) this.dependencies.startAutoScroll();
+        else this.dependencies.stopAutoScroll();
     }
 
     cancel(jobId: string): void {
@@ -204,8 +208,12 @@ export class AutoBatchSessionController {
     }
 
     private stopSession(): void {
-        this.stopPolling();
+        this.detachSession();
         this.dependencies.stopAutoScroll();
+    }
+
+    private detachSession(): void {
+        this.stopPolling();
         this.state = null;
     }
 
@@ -255,7 +263,7 @@ export class AutoBatchSessionController {
             endOffset: window.endOffset
         };
         this.stopPolling();
-        this.dependencies.stopAutoScroll();
+        this.dependencies.pauseAutoScroll();
         const message: Record<string, unknown> = {
             action: 'autoBatchWindowReady',
             jobId: state.jobId,

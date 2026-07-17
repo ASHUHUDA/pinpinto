@@ -1,6 +1,6 @@
 {
   "name": "pinpinto",
-  "version": "1.5.11",
+  "version": "1.5.12",
   "description": "",
   "main": "background.js",
   "scripts": {
@@ -16,7 +16,8 @@
     "build": "vite build && node scripts/package-artifact.mjs --browser=chrome --source=dist --format=zip",
     "build:browsers": "node scripts/build-browsers.mjs",
     "release": "node scripts/release.mjs",
-    "release:force": "node scripts/release.mjs --force"
+    "release:force": "node scripts/release.mjs --force",
+    "release:push": "node scripts/release-push.mjs"
   },
   "keywords": [],
   "author": "",

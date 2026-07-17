@@ -1,6 +1,7 @@
 import {
     isTerminalBatchPhase,
     type BatchStartResult,
+    type BatchOutputMode,
     type BatchTaskMode,
     type BatchTaskSnapshot
 } from '../shared/batch-task';
@@ -23,6 +24,7 @@ type BatchTaskManagerOptions = {
 
 type StartTaskInput = {
     mode: BatchTaskMode;
+    outputMode?: BatchOutputMode;
     targetTabId?: number | null;
     totalImages?: number;
     autoBatchLimit?: number;
@@ -79,6 +81,7 @@ export class BatchTaskManager {
             this.snapshot = {
                 jobId,
                 mode: input.mode,
+                outputMode: input.mode === 'auto' ? 'zip' : input.outputMode === 'individual' ? 'individual' : 'zip',
                 targetTabId: typeof input.targetTabId === 'number' ? input.targetTabId : null,
                 phase: 'queued',
                 batchCursor: 0,
@@ -88,6 +91,9 @@ export class BatchTaskManager {
                 zippedCount: 0,
                 fallbackCount: 0,
                 unresolvedCount: 0,
+                individualCount: 0,
+                failedCount: 0,
+                cancelledCount: 0,
                 associatedDownloadIds: [],
                 pendingFallbackDownloadIds: [],
                 activeWindow: null,
@@ -95,6 +101,8 @@ export class BatchTaskManager {
                 autoBatchLimit: Math.max(1, Math.floor(input.autoBatchLimit ?? 100)),
                 autoBatchTotalBatches: normalizeAutoBatchTotalBatches(input.autoBatchTotalBatches),
                 autoBatchCompletedBatches: 0,
+                autoStopRequested: false,
+                continueAutoScrollAfterStop: false,
                 settings: input.settings ?? {},
                 createdAt: now,
                 updatedAt: now
@@ -137,6 +145,20 @@ export class BatchTaskManager {
                 progress: 100,
                 details: '任务已取消。',
                 autoSessionFinished: true
+            });
+            await this.persistAndBroadcastCurrent();
+            return this.cloneSnapshot();
+        });
+    }
+
+    async requestAutoStop(jobId: string | undefined, continueAutoScroll: boolean): Promise<BatchTaskSnapshot | null> {
+        return this.enqueue(async () => {
+            if (!this.snapshot || this.snapshot.mode !== 'auto' || isTerminalBatchPhase(this.snapshot.phase)) return null;
+            if (jobId && this.snapshot.jobId !== jobId) return null;
+            this.applyPatch(this.snapshot.jobId, {
+                autoStopRequested: true,
+                continueAutoScrollAfterStop: continueAutoScroll === true,
+                details: '将在当前批次完成后停止。'
             });
             await this.persistAndBroadcastCurrent();
             return this.cloneSnapshot();
@@ -208,17 +230,36 @@ export class BatchTaskManager {
 }
 
 function normalizeSnapshot(candidate: BatchTaskSnapshot): BatchTaskSnapshot {
+    const mode = candidate.mode === 'auto' ? 'auto' : 'manual';
     return {
         ...candidate,
+        mode,
+        outputMode: mode === 'auto' ? 'zip' : candidate.outputMode === 'individual' ? 'individual' : 'zip',
         targetTabId: typeof candidate.targetTabId === 'number' ? candidate.targetTabId : null,
         associatedDownloadIds: uniqueNumbers(candidate.associatedDownloadIds),
         pendingFallbackDownloadIds: uniqueNumbers(candidate.pendingFallbackDownloadIds),
-        activeWindow: candidate.activeWindow ?? null,
+        activeWindow: candidate.activeWindow ? {
+            ...candidate.activeWindow,
+            individualQueue: Array.isArray(candidate.activeWindow.individualQueue)
+                ? candidate.activeWindow.individualQueue
+                : []
+        } : null,
+        individualCount: nonNegativeInteger(candidate.individualCount),
+        failedCount: nonNegativeInteger(candidate.failedCount),
+        cancelledCount: nonNegativeInteger(candidate.cancelledCount),
         autoBatchLimit: Math.max(1, Math.floor(candidate.autoBatchLimit ?? 100)),
         autoBatchTotalBatches: normalizeAutoBatchTotalBatches(candidate.autoBatchTotalBatches),
         autoBatchCompletedBatches: Math.max(0, Math.floor(candidate.autoBatchCompletedBatches ?? 0)),
+        autoStopRequested: candidate.autoStopRequested === true,
+        continueAutoScrollAfterStop: candidate.continueAutoScrollAfterStop === true,
         settings: candidate.settings ?? {}
     };
+}
+
+function nonNegativeInteger(value: unknown): number {
+    return typeof value === 'number' && Number.isFinite(value)
+        ? Math.max(0, Math.floor(value))
+        : 0;
 }
 
 function uniqueNumbers(values: unknown): number[] {

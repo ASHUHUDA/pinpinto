@@ -1,48 +1,30 @@
 import { runBatchDownload } from './batch-download';
-import type { BlobJobResult } from './blob-runner';
-import {
-    cancelBatchJobState,
-    createBatchJobState,
-    isBatchCancellationError,
-    isBatchJobCancelled,
-    throwIfBatchJobCancelled,
-    type BatchJobState
-} from './batch-job';
-import { buildSingleDownloadPath, buildZipDownloadPath } from './download-path';
-import {
-    getSettlementOutcome,
-    registerExpectedDownload,
-    settleDownload,
-    type DownloadSettlementKind,
-    type DownloadTerminalState
-} from './download-settlement';
+import { cancelBatchJobState, createBatchJobState, isBatchCancellationError, isBatchJobCancelled, throwIfBatchJobCancelled, type BatchJobState } from './batch-job';
+import { buildSingleDownloadPath } from './download-path';
+import { getSettlementOutcome, registerExpectedDownload, settleDownload, type DownloadSettlementKind, type DownloadTerminalState } from './download-settlement';
 import { BatchTaskManager } from './batch-task-manager';
 import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from '../shared/download-batching';
+import { normalizeDownloadAsZip } from '../shared/download-settings';
 import { isTerminalBatchPhase, type BatchRunResult, type BatchTaskSnapshot } from '../shared/batch-task';
-import {
-    type AutoBatchWindowRequest,
-    type BatchCoordinatorHost,
-    type CommitResponse,
-    type DownloadImage,
-    type StartBatchRequest,
-    type TrackedDownloadInfo
-} from './batch-coordinator-types';
+import { type AutoBatchWindowRequest, type BatchCoordinatorHost, type CommitResponse, type DownloadImage, type StartBatchRequest, type TrackedDownloadInfo } from './batch-coordinator-types';
 import { applySettlement, createActiveWindow, integerOr, uniqueNumbers, windowSettlement } from './batch-window-state';
 import { rememberBounded, shouldBufferEarlyTerminal } from './early-terminal-buffer';
 import { cleanupOrphanBlobJobs, restoreTrackedDownloads } from './batch-recovery';
 import { sendTabMessage } from './tab-messaging';
+import { finalizeStoppedAutoBatch, shouldStopAutoBatch } from './auto-batch-stop-policy';
+import { recoverCompletedHostWork } from './batch-host-recovery';
+import { IndividualDownloadQueue } from './individual-download-queue';
+import { createBatchIndividualDownloadQueue } from './batch-individual-adapter';
 
 type BatchRuntime = BatchJobState & { controllers: Set<AbortController> };
 export type { TrackedDownloadInfo } from './batch-coordinator-types';
-
 export class BatchCoordinator {
     private readonly taskManager: BatchTaskManager;
-    private runtime: BatchRuntime | null = null;
-    private processingWindow = false;
+    private readonly individualDownloads: IndividualDownloadQueue;
+    private runtime: BatchRuntime | null = null; private processingWindow = false; private autoStopIntentJobId: string | null = null;
     private readonly earlySettlements = new Map<number, DownloadTerminalState>();
     private transitionQueue: Promise<unknown> = Promise.resolve();
     private readonly ready: Promise<void>;
-
     constructor(private readonly host: BatchCoordinatorHost) {
         this.taskManager = new BatchTaskManager({
             broadcast: (snapshot) => this.host.broadcast({
@@ -50,6 +32,16 @@ export class BatchCoordinator {
                 jobId: snapshot.jobId,
                 snapshot
             })
+        });
+        this.individualDownloads = createBatchIndividualDownloadQueue({
+            host: this.host,
+            taskManager: this.taskManager,
+            addRuntimeDownloadId: (downloadId) => this.runtime?.activeDownloadIds.add(downloadId),
+            removeRuntimeDownloadId: (downloadId) => this.runtime?.activeDownloadIds.delete(downloadId),
+            markIdle: () => {
+                this.runtime = null;
+                this.processingWindow = false;
+            }
         });
         this.ready = this.initialize();
     }
@@ -62,8 +54,10 @@ export class BatchCoordinator {
         const targetTabId = typeof request.targetTabId === 'number' ? request.targetTabId : senderTabId;
         const autoBatchLimit = normalizeAutoBatchLimit(request.autoBatchLimit ?? settings.autoBatchLimit);
         const autoBatchTotalBatches = normalizeAutoBatchTotalBatches(request.autoBatchTotalBatches ?? settings.autoBatchTotalBatches);
+        const outputMode = mode === 'auto' ? 'zip' : normalizeDownloadAsZip(request.downloadAsZip ?? settings.downloadAsZip) ? 'zip' : 'individual';
         const result = await this.taskManager.start({
             mode,
+            outputMode,
             targetTabId,
             totalImages: mode === 'manual' ? images.length : 0,
             autoBatchLimit,
@@ -71,8 +65,8 @@ export class BatchCoordinator {
             settings
         });
         if (!result.accepted) return result;
-
         this.earlySettlements.clear();
+        this.autoStopIntentJobId = null;
         this.runtime = createRuntime(result.jobId);
         if (mode === 'auto') {
             void this.startAutoSession(result.jobId, targetTabId, autoBatchLimit, settings);
@@ -88,25 +82,21 @@ export class BatchCoordinator {
         }
         return result;
     }
-
     async getSnapshot(): Promise<BatchTaskSnapshot | null> {
         await this.ready;
         return this.taskManager.getSnapshot();
     }
-
     async acceptAutoBatchWindow(request: AutoBatchWindowRequest, senderTabId?: number): Promise<boolean> {
         await this.ready;
         const snapshot = this.taskManager.getSnapshot();
         if (!snapshot || snapshot.mode !== 'auto' || snapshot.jobId !== request.jobId) return false;
         if (snapshot.targetTabId !== null && senderTabId !== undefined && snapshot.targetTabId !== senderTabId) return false;
-        if (this.processingWindow || snapshot.activeWindow || isTerminalBatchPhase(snapshot.phase)) return false;
-
+        if (this.processingWindow || snapshot.activeWindow || isTerminalBatchPhase(snapshot.phase) || shouldStopAutoBatch(snapshot) || this.autoStopIntentJobId === snapshot.jobId) return false;
         const startIndex = integerOr(request.startOffset, request.startIndex, snapshot.batchCursor);
         const endIndex = integerOr(request.endOffset, request.endIndex, startIndex);
         const images = request.images ?? [];
         if (startIndex !== snapshot.batchCursor || endIndex < startIndex || endIndex - startIndex !== images.length) return false;
         if (images.length === 0) return false;
-
         void this.processWindow({
             jobId: snapshot.jobId,
             images,
@@ -128,15 +118,28 @@ export class BatchCoordinator {
         return true;
     }
 
+    async stopAutoBatchAfterCurrent(jobId?: string, continueAutoScroll = false): Promise<boolean> {
+        await this.ready;
+        const snapshot = this.taskManager.getSnapshot();
+        if (!snapshot || snapshot.mode !== 'auto' || isTerminalBatchPhase(snapshot.phase) || (jobId && snapshot.jobId !== jobId)) return false;
+        this.autoStopIntentJobId = snapshot.jobId;
+        const stopped = await this.taskManager.requestAutoStop(jobId, continueAutoScroll);
+        if (!stopped) { this.autoStopIntentJobId = null; return false; }
+        if (!stopped.activeWindow && !this.processingWindow) await this.finalizeAutoStop(stopped);
+        return true;
+    }
+
     async cancel(jobId?: string): Promise<boolean> {
         await this.ready;
         const snapshot = this.taskManager.getSnapshot();
         if (!snapshot || isTerminalBatchPhase(snapshot.phase) || (jobId && snapshot.jobId !== jobId)) return false;
         this.cancelRuntime(snapshot.jobId);
+        if (snapshot.outputMode === 'individual') await this.individualDownloads.cancel(snapshot.jobId, false);
+        const activeSnapshot = this.taskManager.getSnapshot() ?? snapshot;
         await this.taskManager.cancel(snapshot.jobId);
-        await Promise.all(snapshot.associatedDownloadIds.map((downloadId) => chrome.downloads.cancel(downloadId).catch(() => {})));
+        await Promise.all(activeSnapshot.associatedDownloadIds.map((downloadId) => chrome.downloads.cancel(downloadId).catch(() => {})));
         await this.cancelBlobJobs(snapshot.jobId);
-        snapshot.associatedDownloadIds.forEach((downloadId) => this.host.activeDownloads.delete(downloadId));
+        activeSnapshot.associatedDownloadIds.forEach((downloadId) => this.host.activeDownloads.delete(downloadId));
         if (snapshot.targetTabId !== null) {
             await sendTabMessage(snapshot.targetTabId, { action: 'cancelAutoBatchSession', jobId: snapshot.jobId });
         }
@@ -161,11 +164,21 @@ export class BatchCoordinator {
         this.processingWindow = false;
     }
 
-    handleDownloadChange(downloadDelta: chrome.downloads.DownloadDelta, downloadInfo?: TrackedDownloadInfo): void {
+    handleDownloadChange(downloadDelta: chrome.downloads.DownloadDelta, downloadInfo?: TrackedDownloadInfo): boolean {
         const state = downloadDelta.state?.current;
-        if (state !== 'complete' && state !== 'interrupted') return;
+        if (state !== 'complete' && state !== 'interrupted') return false;
+        const snapshot = this.taskManager.getSnapshot();
+        const activeIndividual = snapshot?.outputMode === 'individual' && snapshot.activeWindow?.individualQueue.some((entry) => entry.downloadId === downloadDelta.id);
+        if (downloadInfo?.batchKind === 'individual' || activeIndividual) {
+            void this.ready.then(() => this.individualDownloads.handleTerminal(downloadDelta.id, state, downloadDelta.error?.current));
+            return true;
+        }
         const batchInfo = downloadInfo?.isBatch ? downloadInfo : undefined;
+        const activeWindowDownload = snapshot?.activeWindow?.downloadStates[String(downloadDelta.id)];
+        const shouldBufferZipWindowTerminal = snapshot?.outputMode === 'zip' && Boolean(snapshot.activeWindow);
+        if (!batchInfo && !activeWindowDownload && !shouldBufferZipWindowTerminal) return false;
         void this.ready.then(() => this.settleBrowserDownload(downloadDelta.id, state, batchInfo));
+        return true;
     }
 
     private async initialize(): Promise<void> {
@@ -176,6 +189,10 @@ export class BatchCoordinator {
         snapshot.associatedDownloadIds.forEach((id) => this.runtime?.activeDownloadIds.add(id));
 
         if (snapshot.activeWindow) {
+            if (snapshot.outputMode === 'individual') {
+                await this.individualDownloads.recover(snapshot.jobId);
+                return;
+            }
             restoreTrackedDownloads(this.host, snapshot);
             if (snapshot.activeWindow.expectedDownloadIds.length > 0) {
                 await this.reconcileWindowDownloads(snapshot, true);
@@ -184,6 +201,11 @@ export class BatchCoordinator {
             } else {
                 await this.fail(snapshot.jobId, '后台恢复时活动窗口缺少浏览器下载记录。', 'interrupted');
             }
+            return;
+        }
+
+        if (shouldStopAutoBatch(snapshot)) {
+            await this.finalizeAutoStop(snapshot);
             return;
         }
 
@@ -235,6 +257,15 @@ export class BatchCoordinator {
                     : '未接收到可下载图片。',
                 activeWindow
             });
+            if (snapshot.outputMode === 'individual') {
+                await this.individualDownloads.start({
+                    jobId: snapshot.jobId,
+                    images: request.images,
+                    settings: request.settings,
+                    sequenceOffset: request.startIndex
+                });
+                return;
+            }
             const runResult = await runBatchDownload({
                 blobHost: this.host.blobHost,
                 maxConcurrentDownloads: this.host.maxConcurrentDownloads,
@@ -259,7 +290,8 @@ export class BatchCoordinator {
                 getDownloadCandidateUrls: this.host.getDownloadCandidateUrls,
                 buildIndexedFilename: this.host.buildIndexedFilename,
                 extractFilenameFromUrl: this.host.extractFilenameFromUrl,
-                formatLocalTimestamp: this.host.formatLocalTimestamp
+                formatLocalTimestamp: this.host.formatLocalTimestamp,
+                rememberRequestedFilename: this.host.rememberRequestedFilename
             }, runtime, request.images, request.settings, { sequenceOffset: request.startIndex });
             if (isBatchJobCancelled(runtime)) return;
             await this.recordRunResult(snapshot.jobId, runResult, request.settings);
@@ -269,7 +301,7 @@ export class BatchCoordinator {
             }
         } finally {
             this.processingWindow = false;
-            await this.queueWindowProgress(snapshot.jobId);
+            if (snapshot.outputMode === 'zip') await this.queueWindowProgress(snapshot.jobId);
         }
     }
 
@@ -320,6 +352,7 @@ export class BatchCoordinator {
                 return { accepted: false, error: 'batch task is no longer active' };
             }
             const requestedFilename = buildSingleDownloadPath(request.filename);
+            this.host.rememberRequestedFilename?.(request.sourceUrl, requestedFilename);
             const downloadId = await chrome.downloads.download({
                 url: request.sourceUrl,
                 filename: requestedFilename,
@@ -496,6 +529,9 @@ export class BatchCoordinator {
     }
 
     private async acceptSettledWindow(snapshot: BatchTaskSnapshot): Promise<void> {
+        const latest = this.taskManager.getSnapshot();
+        if (!latest || latest.jobId !== snapshot.jobId) return;
+        snapshot = latest;
         const activeWindow = snapshot.activeWindow;
         if (!activeWindow) return;
         const completedBatches = snapshot.mode === 'auto'
@@ -504,7 +540,7 @@ export class BatchCoordinator {
         const reachedBatchCap = snapshot.mode === 'auto'
             && snapshot.autoBatchTotalBatches > 0
             && completedBatches >= snapshot.autoBatchTotalBatches;
-        const finalWindow = activeWindow.finalWindow || reachedBatchCap;
+        const finalWindow = activeWindow.finalWindow || reachedBatchCap || shouldStopAutoBatch(snapshot);
         await this.taskManager.mutate(snapshot.jobId, (current) => {
             if (!current.activeWindow || current.activeWindow.windowId !== activeWindow.windowId) return {};
             return {
@@ -520,6 +556,10 @@ export class BatchCoordinator {
         });
         const updated = this.taskManager.getSnapshot();
         if (!updated || updated.jobId !== snapshot.jobId) return;
+        if (shouldStopAutoBatch(updated)) {
+            await this.finalizeAutoStop(updated);
+            return;
+        }
         if (updated.mode === 'auto' && !finalWindow) {
             await this.taskManager.update(updated.jobId, {
                 phase: 'scrolling',
@@ -549,6 +589,16 @@ export class BatchCoordinator {
             return response?.success === true;
         });
         if (!cleared) return this.fail(jobId, '无法清理目标页面会话。', 'interrupted');
+        this.runtime = null;
+        this.processingWindow = false;
+    }
+
+    private async finalizeAutoStop(snapshot: BatchTaskSnapshot): Promise<void> {
+        if (snapshot.activeWindow || this.processingWindow) return;
+        if (!await finalizeStoppedAutoBatch(this.taskManager, snapshot)) {
+            await this.fail(snapshot.jobId, '无法结束页面自动批次会话。', 'interrupted');
+            return;
+        }
         this.runtime = null;
         this.processingWindow = false;
     }
@@ -607,61 +657,24 @@ export class BatchCoordinator {
     }
 
     private async recoverHostWork(snapshot: BatchTaskSnapshot): Promise<void> {
-        const activeWindow = snapshot.activeWindow;
-        if (!activeWindow?.hostJobId) return this.fail(snapshot.jobId, '后台恢复时 Blob 主机标识缺失。', 'interrupted');
         this.processingWindow = true;
         try {
-            const status = await this.host.blobHost.getStatus(activeWindow.hostJobId);
-            if (status?.state !== 'completed') throw new Error('Blob host did not retain a completed result.');
-            const result = await this.host.blobHost.result(activeWindow.hostJobId);
-            await this.reattachHostResult(snapshot, result);
+            await recoverCompletedHostWork({
+                blobHost: this.host.blobHost,
+                requestFallbackDownload: (request) => this.requestFallbackDownload(request),
+                recordRunResult: (jobId, result, settings) => this.recordRunResult(jobId, result, settings)
+            }, snapshot);
         } catch (error) {
-            await this.host.blobHost.cancel(activeWindow.hostJobId).catch(() => {});
-            await this.host.blobHost.release(activeWindow.hostJobId).catch(() => {});
+            const hostJobId = snapshot.activeWindow?.hostJobId;
+            if (hostJobId) {
+                await this.host.blobHost.cancel(hostJobId).catch(() => {});
+                await this.host.blobHost.release(hostJobId).catch(() => {});
+            }
             await this.fail(snapshot.jobId, error instanceof Error ? error.message : String(error), 'interrupted');
         } finally {
             this.processingWindow = false;
             await this.queueWindowProgress(snapshot.jobId);
         }
-    }
-
-    private async reattachHostResult(snapshot: BatchTaskSnapshot, blobResult: BlobJobResult): Promise<void> {
-        const fallbackIds: number[] = [];
-        let unresolvedCount = 0;
-        for (const failure of blobResult.failedEntries) {
-            const fallback = await this.requestFallbackDownload({
-                jobId: snapshot.jobId,
-                image: failure.sourceUrl,
-                sourceUrl: failure.sourceUrl,
-                filename: failure.filename,
-                settings: snapshot.settings
-            });
-            if (fallback.accepted && typeof fallback.downloadId === 'number') fallbackIds.push(fallback.downloadId);
-            else unresolvedCount++;
-        }
-        let zipDownloadId: number | undefined;
-        let zipFilename: string | undefined;
-        if (blobResult.zippedEntries.length > 0) {
-            if (!blobResult.objectUrl) throw new Error('Recovered Blob result has no object URL.');
-            zipFilename = buildZipDownloadPath('PinPinto_recovered.zip');
-            zipDownloadId = await chrome.downloads.download({
-                url: blobResult.objectUrl,
-                filename: zipFilename,
-                conflictAction: 'uniquify',
-                saveAs: false
-            });
-        }
-        await this.recordRunResult(snapshot.jobId, {
-            results: [],
-            totalCount: blobResult.zippedEntries.length + blobResult.failedEntries.length,
-            zippedCount: blobResult.zippedEntries.length,
-            fallbackRequestedCount: fallbackIds.length,
-            unresolvedCount,
-            zipDownloadId,
-            zipFilename,
-            zipLeaseJobId: zipDownloadId === undefined ? undefined : blobResult.jobId,
-            fallbackDownloadIds: fallbackIds
-        }, snapshot.settings);
     }
 
     private cancelRuntime(jobId: string): void {
@@ -672,7 +685,9 @@ export class BatchCoordinator {
 
     private async cancelBlobJobs(batchJobId: string): Promise<void> {
         const blobJobIds = await this.host.blobHost.listActiveJobs().catch(() => []);
-        await Promise.all(blobJobIds.filter((jobId) => jobId.startsWith(`${batchJobId}:zip:`)).map(async (jobId) => {
+        await Promise.all(blobJobIds.filter((jobId) => (
+            jobId.startsWith(`${batchJobId}:zip:`) || jobId.startsWith(`${batchJobId}:file:`)
+        )).map(async (jobId) => {
             await this.host.blobHost.cancel(jobId).catch(() => {});
             await this.host.blobHost.release(jobId).catch(() => {});
         }));

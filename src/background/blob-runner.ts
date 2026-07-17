@@ -10,11 +10,14 @@ export type BlobJobEntry = {
     filename: string;
 };
 
+export type BlobJobOutput = 'zip' | 'file';
+
 export type BlobJobRequest = {
     jobId: string;
     entries: BlobJobEntry[];
     maxConcurrency: number;
     fetchTimeoutMs?: number;
+    output?: BlobJobOutput;
 };
 
 export type BlobJobState = 'running' | 'completed' | 'failed' | 'cancelled';
@@ -38,7 +41,9 @@ export type BlobJobFailure = Pick<BlobJobEntry, 'imageId' | 'sequence' | 'source
 
 export type BlobJobResult = {
     jobId: string;
+    output: BlobJobOutput;
     objectUrl?: string;
+    contentType?: string;
     zippedEntries: BlobJobSuccess[];
     failedEntries: BlobJobFailure[];
 };
@@ -158,9 +163,14 @@ export class BlobJobRunner implements BlobJobHost {
 
     private async run(record: JobRecord): Promise<BlobJobResult> {
         try {
+            const output = normalizeBlobJobOutput(record.request.output);
+            if (output === 'file' && record.request.entries.length !== 1) {
+                throw new Error('File Blob jobs require exactly one entry.');
+            }
+
             const zippedEntries: BlobJobSuccess[] = [];
             const failedEntries: BlobJobFailure[] = [];
-            const files: Array<{ filename: string; bytes: ArrayBuffer }> = [];
+            const files: Array<{ filename: string; bytes: ArrayBuffer; contentType: string }> = [];
             const concurrency = Math.max(1, Math.floor(record.request.maxConcurrency || 1));
 
             for (let index = 0; index < record.request.entries.length; index += concurrency) {
@@ -169,7 +179,11 @@ export class BlobJobRunner implements BlobJobHost {
                 await Promise.all(chunk.map(async (entry) => {
                     try {
                         const fetched = await this.fetchEntry(record, entry);
-                        files.push({ filename: entry.filename, bytes: fetched.bytes });
+                        files.push({
+                            filename: entry.filename,
+                            bytes: fetched.bytes,
+                            contentType: fetched.contentType
+                        });
                         zippedEntries.push({
                             imageId: entry.imageId,
                             sequence: entry.sequence,
@@ -194,24 +208,27 @@ export class BlobJobRunner implements BlobJobHost {
 
             this.throwIfCancelled(record);
             let objectUrl: string | undefined;
+            let contentType: string | undefined;
             if (files.length > 0) {
-                const zip = this.createZip();
-                for (const file of files) zip.file(file.filename, file.bytes);
-                const blob = await zip.generateAsync(
-                    { type: 'blob', streamFiles: true, compression: 'STORE' },
-                    ({ percent }) => {
-                        this.throwIfCancelled(record);
-                        record.status.zipProgress = percent;
-                    }
-                );
+                const blob = output === 'file'
+                    ? new Blob([files[0].bytes], { type: files[0].contentType })
+                    : await this.buildJobZip(record, files);
                 this.throwIfCancelled(record);
                 objectUrl = this.createObjectURL(blob);
                 record.objectUrl = objectUrl;
+                contentType = blob.type || undefined;
             }
 
             record.status.state = 'completed';
             record.status.zipProgress = 100;
-            return { jobId: record.request.jobId, objectUrl, zippedEntries, failedEntries };
+            return {
+                jobId: record.request.jobId,
+                output,
+                objectUrl,
+                contentType,
+                zippedEntries,
+                failedEntries
+            };
         } catch (error) {
             if (record.status.state === 'cancelled') throw new Error(`Blob job cancelled: ${record.request.jobId}`);
             record.status.state = 'failed';
@@ -226,7 +243,7 @@ export class BlobJobRunner implements BlobJobHost {
     private async fetchEntry(
         record: JobRecord,
         entry: BlobJobEntry
-    ): Promise<{ bytes: ArrayBuffer; resolvedUrl: string }> {
+    ): Promise<{ bytes: ArrayBuffer; resolvedUrl: string; contentType: string }> {
         if (entry.candidateUrls.length === 0) throw new Error('图片 URL 无效');
         let lastError: unknown = new Error('图片获取失败');
 
@@ -239,12 +256,18 @@ export class BlobJobRunner implements BlobJobHost {
                 this.throwIfCancelled(record);
                 const response = await this.fetchImpl(url, { cache: 'no-store', signal: controller.signal });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const contentType = response.headers.get('content-type') || '';
-                if (contentType && !contentType.startsWith('image/')) throw new Error(`非图片响应: ${contentType}`);
+                const responseContentType = response.headers.get('content-type') || '';
+                const contentType = normalizeContentType(responseContentType);
+                if (
+                    (contentType && !contentType.startsWith('image/'))
+                    || (!contentType && normalizeBlobJobOutput(record.request.output) === 'file')
+                ) {
+                    throw new Error(`非图片响应: ${responseContentType || 'missing content-type'}`);
+                }
                 const bytes = await response.arrayBuffer();
                 if (bytes.byteLength === 0) throw new Error('图片内容为空');
                 this.throwIfCancelled(record);
-                return { bytes, resolvedUrl: url };
+                return { bytes, resolvedUrl: url, contentType };
             } catch (error) {
                 this.throwIfCancelled(record);
                 lastError = error instanceof Error && error.name === 'AbortError'
@@ -257,6 +280,21 @@ export class BlobJobRunner implements BlobJobHost {
         }
 
         throw new Error(`图片获取失败：${errorMessage(lastError)}`);
+    }
+
+    private async buildJobZip(
+        record: JobRecord,
+        files: Array<{ filename: string; bytes: ArrayBuffer }>
+    ): Promise<Blob> {
+        const zip = this.createZip();
+        for (const file of files) zip.file(file.filename, file.bytes);
+        return zip.generateAsync(
+            { type: 'blob', streamFiles: true, compression: 'STORE' },
+            ({ percent }) => {
+                this.throwIfCancelled(record);
+                record.status.zipProgress = percent;
+            }
+        );
     }
 
     private throwIfCancelled(record: JobRecord): void {
@@ -276,4 +314,12 @@ function cloneStatus(status: BlobJobStatus): BlobJobStatus {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeContentType(value: string): string {
+    return value.split(';', 1)[0].trim().toLowerCase();
+}
+
+function normalizeBlobJobOutput(value: unknown): BlobJobOutput {
+    return value === 'file' ? 'file' : 'zip';
 }

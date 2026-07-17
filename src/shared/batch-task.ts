@@ -1,4 +1,5 @@
 export type BatchTaskMode = 'manual' | 'auto';
+export type BatchOutputMode = 'zip' | 'individual';
 
 export type BatchTaskPhase =
     | 'queued'
@@ -43,9 +44,29 @@ export type BatchRunResult = {
 
 export type ActiveWindowDownload = {
     downloadId: number;
-    kind: 'zip' | 'fallback';
+    kind: 'zip' | 'fallback' | 'individual';
     state: 'pending' | 'complete' | 'interrupted' | 'missing';
     blobLeaseJobId?: string;
+};
+
+export type IndividualDownloadState =
+    | 'queued'
+    | 'preparing'
+    | 'pending'
+    | 'complete'
+    | 'failed'
+    | 'cancelled';
+
+export type IndividualDownloadEntry = {
+    imageId: string;
+    sequence: number;
+    sourceUrl: string;
+    candidateUrls: string[];
+    filename: string;
+    state: IndividualDownloadState;
+    downloadId?: number;
+    blobLeaseJobId?: string;
+    error?: string;
 };
 
 export type ActiveBatchWindow = {
@@ -59,6 +80,7 @@ export type ActiveBatchWindow = {
     zippedCount: number;
     fallbackCount: number;
     unresolvedCount: number;
+    individualQueue: IndividualDownloadEntry[];
     hostJobId: string | null;
     hostState: 'idle' | 'fetching' | 'compressing' | 'blob-ready' | 'released';
     contentCommitState: {
@@ -74,6 +96,7 @@ export type ActiveBatchWindow = {
 export type BatchTaskSnapshot = {
     jobId: string;
     mode: BatchTaskMode;
+    outputMode: BatchOutputMode;
     targetTabId: number | null;
     phase: BatchTaskPhase;
     batchCursor: number;
@@ -83,6 +106,9 @@ export type BatchTaskSnapshot = {
     zippedCount: number;
     fallbackCount: number;
     unresolvedCount: number;
+    individualCount: number;
+    failedCount: number;
+    cancelledCount: number;
     associatedDownloadIds: number[];
     pendingFallbackDownloadIds: number[];
     activeWindow: ActiveBatchWindow | null;
@@ -90,6 +116,8 @@ export type BatchTaskSnapshot = {
     autoBatchLimit: number;
     autoBatchTotalBatches: number;
     autoBatchCompletedBatches: number;
+    autoStopRequested: boolean;
+    continueAutoScrollAfterStop: boolean;
     settings: Record<string, unknown>;
     createdAt: number;
     updatedAt: number;

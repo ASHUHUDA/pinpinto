@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/sidebar.css">
+    <link rel="stylesheet" href="/src/shared/download-settings-controls.css">
 </head>
 
 <body>
@@ -20,7 +21,7 @@
             </div>
             <div class="header-info">
                 <h1>PinPinto</h1>
-            <span class="badge-version">v1.5.11</span>
+            <span class="badge-version">v1.5.12</span>
             </div>
             <div class="header-actions">
                 <div class="settings-dropdown">
@@ -112,7 +113,7 @@
                 <div class="progress-track">
                     <div class="progress-fill" id="progressFill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                 </div>
-                <button class="btn btn-ghost danger-text btn-block" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
+                <button class="btn btn-ghost danger-text btn-block" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel current task</button>
             </div>
         </div>
 
@@ -142,17 +143,45 @@
                     <div class="toggle-track"></div>
                 </div>
             </label>
+
+            <label class="download-setting-row" for="downloadAsZip">
+                <span class="download-setting-label" data-i18n="setting.downloadAsZip">Download as ZIP</span>
+                <span class="toggle-wrapper download-toggle">
+                    <input type="checkbox" id="downloadAsZip" checked class="toggle-input">
+                    <span class="toggle-track" aria-hidden="true"></span>
+                </span>
+            </label>
+            <label class="download-setting-row" for="singleImageDownloadMethod">
+                <span class="download-setting-label" data-i18n="setting.singleImageDownload">Single-image download</span>
+                <select class="download-method-select" id="singleImageDownloadMethod">
+                    <option value="browser" data-i18n="setting.singleImageBrowser">Browser</option>
+                    <option value="external" data-i18n="setting.singleImageExternal">External downloader</option>
+                </select>
+            </label>
         </div>
 
         <div class="panel-section batch-limit-panel">
-            <h3 class="panel-title" data-i18n="panel.autoBatchSettings">Auto batch settings</h3>
+            <div class="settings-heading-with-info">
+                <h3 class="panel-title" data-i18n="panel.autoBatchSettings">Auto batch settings</h3>
+                <span class="settings-info">
+                    <button type="button" id="autoBatchInfoButton" class="settings-info-button" aria-describedby="autoBatchInfoTooltip">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9"></circle>
+                            <line x1="12" y1="11" x2="12" y2="16"></line>
+                            <circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle>
+                        </svg>
+                        <span class="settings-info-label" data-i18n="action.batchInfo">Batch information</span>
+                    </button>
+                    <span id="autoBatchInfoTooltip" class="settings-tooltip" role="tooltip" data-i18n="setting.autoBatchTotalBatchesHelp">Total batches: leave blank or enter 0 for unlimited batches</span>
+                </span>
+            </div>
 
             <label class="setting-row batch-limit-row" for="autoBatchLimit">
                 <span class="setting-text" data-i18n="setting.autoBatchLimit">Images per batch</span>
                 <input class="batch-limit-input" type="text" id="autoBatchLimit" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="100">
             </label>
             <label class="setting-row batch-limit-row" for="autoBatchTotalBatches">
-                <span class="setting-text" data-i18n="setting.autoBatchTotalBatches">Total batches (0 = unlimited)</span>
+                <span class="setting-text" data-i18n="setting.autoBatchTotalBatches">Total batches</span>
                 <input class="batch-limit-input" type="text" id="autoBatchTotalBatches" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="">
             </label>
         </div>

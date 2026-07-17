@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/popup.css">
+    <link rel="stylesheet" href="/src/shared/download-settings-controls.css">
 </head>
 
 <body data-theme="dark">
@@ -23,7 +24,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-            <span class="badge-version">v1.5.11</span>
+            <span class="badge-version">v1.5.12</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -145,14 +146,27 @@
             </div>
 
             <div class="settings-panel batch-limit-panel">
-                <div class="panel-header" data-i18n="panel.autoBatchSettings">Auto batch settings</div>
+                <div class="panel-header settings-heading-with-info">
+                    <span data-i18n="panel.autoBatchSettings">Auto batch settings</span>
+                    <span class="settings-info">
+                        <button type="button" id="autoBatchInfoButton" class="settings-info-button" aria-describedby="autoBatchInfoTooltip">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <line x1="12" y1="11" x2="12" y2="16"></line>
+                                <circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle>
+                            </svg>
+                            <span class="settings-info-label" data-i18n="action.batchInfo">Batch information</span>
+                        </button>
+                        <span id="autoBatchInfoTooltip" class="settings-tooltip" role="tooltip" data-i18n="setting.autoBatchTotalBatchesHelp">Total batches: leave blank or enter 0 for unlimited batches</span>
+                    </span>
+                </div>
                 <div class="batch-limit-area">
                     <label class="batch-limit-row" for="autoBatchLimit">
                         <span class="batch-limit-label" data-i18n="setting.autoBatchLimit">Images per batch</span>
                         <input class="batch-limit-input" type="text" id="autoBatchLimit" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="100">
                     </label>
                     <label class="batch-limit-row" for="autoBatchTotalBatches">
-                        <span class="batch-limit-label" data-i18n="setting.autoBatchTotalBatches">Total batches (0 = unlimited)</span>
+                        <span class="batch-limit-label" data-i18n="setting.autoBatchTotalBatches">Total batches</span>
                         <input class="batch-limit-input" type="text" id="autoBatchTotalBatches" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="">
                     </label>
                 </div>
@@ -172,6 +186,21 @@
                             </span>
                         </div>
                         <span class="checkbox-text" data-i18n="setting.highQuality">Prefer high quality</span>
+                    </label>
+
+                    <label class="download-setting-row" for="downloadAsZip">
+                        <span class="download-setting-label" data-i18n="setting.downloadAsZip">Download as ZIP</span>
+                        <span class="switch download-toggle">
+                            <input type="checkbox" id="downloadAsZip" checked>
+                            <span class="slider round" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                    <label class="download-setting-row" for="singleImageDownloadMethod">
+                        <span class="download-setting-label" data-i18n="setting.singleImageDownload">Single-image download</span>
+                        <select class="download-method-select" id="singleImageDownloadMethod">
+                            <option value="browser" data-i18n="setting.singleImageBrowser">Browser</option>
+                            <option value="external" data-i18n="setting.singleImageExternal">External downloader</option>
+                        </select>
                     </label>
 
                 </div>
@@ -194,7 +223,7 @@
                     <div class="progress-track">
                         <div class="progress-fill" id="progressFill" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
                     </div>
-                    <button class="btn btn-ghost danger-text" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel download</button>
+                    <button class="btn btn-ghost danger-text" id="cancelDownloadBtn" data-i18n="action.cancelDownload">Cancel current task</button>
                 </div>
             </div>
         </main>

@@ -8,7 +8,7 @@ export function createActiveWindow(snapshot: BatchTaskSnapshot, request: {
     endIndex: number;
     finalWindow: boolean;
 }): ActiveBatchWindow {
-    const hostJobId = request.images.length > 0
+    const hostJobId = snapshot.outputMode === 'zip' && request.images.length > 0
         ? `${snapshot.jobId}:zip:${request.startIndex}:${request.images.length}`
         : null;
     return {
@@ -22,6 +22,7 @@ export function createActiveWindow(snapshot: BatchTaskSnapshot, request: {
         zippedCount: 0,
         fallbackCount: 0,
         unresolvedCount: 0,
+        individualQueue: [],
         hostJobId,
         hostState: hostJobId ? 'fetching' : 'idle',
         contentCommitState: {

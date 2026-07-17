@@ -1,4 +1,4 @@
-export type SingleDownloadPhase = 'idle' | 'pending' | 'complete' | 'retry';
+export type SingleDownloadPhase = 'idle' | 'pending' | 'submitted' | 'complete' | 'retry';
 
 export type SingleDownloadState = {
     imageId: string;
@@ -9,12 +9,14 @@ export type SingleDownloadState = {
 };
 
 export type SingleDownloadSettlement = {
-    state: 'complete' | 'rejected' | 'interrupted';
+    state: 'submitted' | 'complete' | 'rejected' | 'interrupted';
     error?: string | null;
 };
 
 type SingleDownloadStartResult = {
     success?: boolean;
+    submitted?: boolean;
+    state?: string;
     error?: string | null;
 };
 
@@ -37,7 +39,7 @@ export function acceptSingleDownload(state: SingleDownloadState): {
     accepted: boolean;
     state: SingleDownloadState;
 } {
-    if (state.phase === 'pending' || state.phase === 'complete') {
+    if (state.phase === 'pending' || state.phase === 'submitted' || state.phase === 'complete') {
         return { accepted: false, state };
     }
     return {
@@ -57,6 +59,15 @@ export function settleSingleDownload(
     settlement: SingleDownloadSettlement
 ): SingleDownloadState {
     if (state.phase !== 'pending') return state;
+    if (settlement.state === 'submitted') {
+        return {
+            ...state,
+            phase: 'submitted',
+            disabled: true,
+            error: null,
+            removeImageId: null
+        };
+    }
     if (settlement.state === 'complete') {
         return {
             ...state,
@@ -99,7 +110,12 @@ export class SingleDownloadController {
         this.render(entry.button, entry.state);
         try {
             const response = await startDownload();
-            if (response?.success === true) return true;
+            if (response?.success === true) {
+                if (response.submitted === true || response.state === 'submitted') {
+                    this.applySettlement(entry, { state: 'submitted' });
+                }
+                return true;
+            }
             this.applySettlement(entry, {
                 state: 'rejected',
                 error: response?.error || 'The browser rejected the download request.'
@@ -146,6 +162,8 @@ export class SingleDownloadController {
             ? 'Downloading...'
             : state.phase === 'retry'
                 ? 'Retry'
+                : state.phase === 'submitted'
+                    ? 'Sent to external downloader'
                 : state.phase === 'complete'
                     ? 'Complete'
                     : 'Download';

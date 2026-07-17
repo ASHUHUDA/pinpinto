@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 
+import { containsForbiddenBinaryDataUri } from './production-artifact-rules.mjs';
+
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
 const version = packageJson.version;
@@ -40,6 +42,11 @@ for (const artifact of artifacts) {
     for (const pattern of forbiddenProductionPatterns) {
       assert.doesNotMatch(source, pattern, `${artifact.browser}:${entry.name} contains ${pattern}`);
     }
+    assert.equal(
+      containsForbiddenBinaryDataUri(source),
+      false,
+      `${artifact.browser}:${entry.name} contains an embedded binary data URI`
+    );
     if (entry.name === 'welcome.html') {
       assert.doesNotMatch(source, /<script\b/i, `${artifact.browser} welcome page contains inline script`);
       assert.doesNotMatch(source, /\son[a-z]+\s*=/i, `${artifact.browser} welcome page contains inline handler`);

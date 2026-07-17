@@ -6,7 +6,7 @@ export function createBlobJobHost(): BlobJobHost {
     const browserTarget = typeof __PINPINTO_BROWSER_TARGET__ === 'undefined'
         ? 'chrome'
         : __PINPINTO_BROWSER_TARGET__;
-    if (browserTarget === 'chrome' && chrome.offscreen?.createDocument && chrome.offscreen?.hasDocument) {
+    if (browserTarget === 'chrome' && chrome.offscreen?.createDocument) {
         return new OffscreenBlobJobHost();
     }
     try {

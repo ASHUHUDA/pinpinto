@@ -77,18 +77,24 @@ export class ContentSessionStore {
         }
     }
 
-    selectAllImages() {
-        this.imageElements.forEach((imageData, imageId) => {
-            if (this.selectedImages.has(imageId)) return;
-            const checkbox = imageData.overlay.querySelector('.pinvault-checkbox');
-            if (!(checkbox instanceof HTMLElement)) return;
+    selectImage(imageId: string): boolean {
+        const imageData = this.imageElements.get(imageId);
+        if (!imageData) return false;
+        if (this.selectedImages.has(imageId)) return true;
 
-            this.selectedImages.add(imageId);
-            imageData.overlay.classList.add('selected');
-            imageData.container.classList.add('pinvault-selected');
-            imageData.element.setAttribute('data-pinvault-selected', 'true');
-            checkbox.textContent = '[x]';
-        });
+        const checkbox = imageData.overlay.querySelector('.pinvault-checkbox');
+        if (!(checkbox instanceof HTMLElement)) return false;
+
+        this.selectedImages.add(imageId);
+        imageData.overlay.classList.add('selected');
+        imageData.container.classList.add('pinvault-selected');
+        imageData.element.setAttribute('data-pinvault-selected', 'true');
+        checkbox.textContent = '[x]';
+        return true;
+    }
+
+    selectAllImages() {
+        this.imageElements.forEach((_imageData, imageId) => this.selectImage(imageId));
     }
 
     deselectAllImages() {
@@ -110,7 +116,8 @@ export class ContentSessionStore {
         this.selectedImages.clear();
         this.imageElements.clear();
         this.imageOrder = [];
-        this.ignoredImageSources.clear();
+        // Keep ignored sources so delayed auto-scroll scans or MutationObserver
+        // callbacks cannot recreate overlays for the same just-cleared images.
         this.nextImageOrdinal = 1;
         this.eligibleBaseOffset = 0;
         this.nextEligibleOrdinal = 0;

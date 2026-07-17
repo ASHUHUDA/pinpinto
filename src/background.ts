@@ -4,8 +4,13 @@ import { BatchCoordinator, type TrackedDownloadInfo } from './background/batch-c
 import { createBlobJobHost } from './background/blob-host';
 import type { BlobJobHost } from './background/blob-runner';
 import { OFFSCREEN_MESSAGE_TARGET } from './background/offscreen-protocol';
-import { buildSingleDownloadPath } from './background/download-path';
 import { SingleDownloadRegistry } from './background/single-download-registry';
+import { cleanupOrphanSingleBlobJobs } from './background/batch-recovery';
+import { rememberBounded } from './background/early-terminal-buffer';
+import {
+    SingleImageDownloadService,
+    type SingleImageDownloadResult
+} from './background/single-image-download';
 import {
     getDownloadCandidateUrls as getDownloadCandidateUrlsHelper,
     getHighQualityUrl as getHighQualityUrlHelper,
@@ -31,23 +36,17 @@ class PinVaultProBackground {
     blobHost: BlobJobHost;
     batchCoordinator: BatchCoordinator;
     singleDownloads: SingleDownloadRegistry;
+    singleImageDownloads: SingleImageDownloadService;
+    externalDownloadIds: Map<number, true>;
+    requestedFilenameByUrl: Map<string, string>;
 
     constructor() {
         this.activeDownloads = new Map();
         this.maxConcurrentDownloads = 3;
+        this.externalDownloadIds = new Map();
+        this.requestedFilenameByUrl = new Map();
         const blobHost = createBlobJobHost();
         this.blobHost = blobHost;
-        this.batchCoordinator = new BatchCoordinator({
-            blobHost,
-            activeDownloads: this.activeDownloads,
-            maxConcurrentDownloads: this.maxConcurrentDownloads,
-            normalizeImageUrlForDeduplication: (image, settings) => this.normalizeImageUrlForDeduplication(image, settings),
-            getDownloadCandidateUrls: (rawUrl, highQualityEnabled) => this.getDownloadCandidateUrls(rawUrl, highQualityEnabled),
-            buildIndexedFilename: (sequence, timestamp, url, originalFilename) => this.buildIndexedFilename(sequence, timestamp, url, originalFilename),
-            extractFilenameFromUrl: (url) => this.extractFilenameFromUrl(url),
-            formatLocalTimestamp: () => this.formatLocalTimestamp(),
-            broadcast: (message) => this.sendMessageToAllExtensionPages(message)
-        });
         this.singleDownloads = new SingleDownloadRegistry({
             notify: async (record, state, error) => {
                 if (record.targetTabId === null || !record.imageId) return;
@@ -58,10 +57,73 @@ class PinVaultProBackground {
                     error
                 });
             },
-            onRemoved: (record) => this.activeDownloads.delete(record.downloadId)
+            onRemoved: async (record) => {
+                this.activeDownloads.delete(record.downloadId);
+                if (record.blobLeaseJobId) {
+                    await blobHost.release(record.blobLeaseJobId).catch(() => {});
+                }
+            }
+        });
+        this.batchCoordinator = new BatchCoordinator({
+            blobHost,
+            activeDownloads: this.activeDownloads,
+            maxConcurrentDownloads: this.maxConcurrentDownloads,
+            normalizeImageUrlForDeduplication: (image, settings) => this.normalizeImageUrlForDeduplication(image, settings),
+            getDownloadCandidateUrls: (rawUrl, highQualityEnabled) => this.getDownloadCandidateUrls(rawUrl, highQualityEnabled),
+            buildIndexedFilename: (sequence, timestamp, url, originalFilename) => this.buildIndexedFilename(sequence, timestamp, url, originalFilename),
+            extractFilenameFromUrl: (url) => this.extractFilenameFromUrl(url),
+            formatLocalTimestamp: () => this.formatLocalTimestamp(),
+            rememberRequestedFilename: (url, filename) => this.rememberRequestedFilename(url, filename),
+            broadcast: (message) => this.sendMessageToAllExtensionPages(message)
+        });
+        this.singleImageDownloads = new SingleImageDownloadService({
+            blobHost,
+            registerBrowserDownload: async (registration) => {
+                this.activeDownloads.set(registration.downloadId, {
+                    imageData: registration.imageData,
+                    settings: registration.settings,
+                    startTime: Date.now(),
+                    status: 'downloading',
+                    isBatch: false,
+                    blobLeaseJobId: registration.blobLeaseJobId,
+                    targetTabId: registration.targetTabId,
+                    imageId: registration.imageId,
+                    requestedFilename: registration.requestedFilename
+                });
+                await this.singleDownloads.register({
+                    downloadId: registration.downloadId,
+                    targetTabId: registration.targetTabId,
+                    imageId: registration.imageId,
+                    requestedFilename: registration.requestedFilename,
+                    blobLeaseJobId: registration.blobLeaseJobId
+                });
+            },
+            removeTrackedDownload: (downloadId) => {
+                this.activeDownloads.delete(downloadId);
+            },
+            rememberRequestedFilename: (url, filename) => this.rememberRequestedFilename(url, filename)
+        });
+        void this.cleanupOrphanSingleDownloads().catch((error) => {
+            console.warn('Failed to reconcile single-image Blob jobs:', error);
         });
 
         this.init();
+    }
+
+    private async cleanupOrphanSingleDownloads(): Promise<void> {
+        const activeSingleRecords = await this.singleDownloads.getRecords();
+        for (const record of activeSingleRecords) {
+            this.activeDownloads.set(record.downloadId, {
+                imageData: { id: record.imageId ?? undefined, url: 'restored-single' }, settings: {},
+                startTime: record.createdAt, status: 'downloading', isBatch: false,
+                blobLeaseJobId: record.blobLeaseJobId, targetTabId: record.targetTabId,
+                imageId: record.imageId, requestedFilename: record.requestedFilename
+            });
+        }
+        const activeLeaseJobIds = activeSingleRecords
+            .map((record) => record.blobLeaseJobId)
+            .filter((jobId): jobId is string => typeof jobId === 'string' && jobId.length > 0);
+        await cleanupOrphanSingleBlobJobs(this.blobHost, activeLeaseJobIds);
     }
 
     init() {
@@ -154,6 +216,8 @@ class PinVaultProBackground {
                 filenameFormat: 'title_date',
                 highQuality: true,
                 autoScroll: false,
+                downloadAsZip: true,
+                singleImageDownloadMethod: 'browser',
                 maxConcurrentDownloads: 3,
                 downloadPath: ''
             });
@@ -203,15 +267,23 @@ class PinVaultProBackground {
                     sendResponse({ status: 'ready', timestamp: Date.now() });
                     break;
 
-                case 'downloadImage':
-                    const downloadId = await this.downloadSingleImage(
+                case 'downloadImage': {
+                    const result = await this.downloadSingleImage(
                         request.imageData,
                         request.settings,
                         sender.tab?.id,
                         request.imageData?.id
                     );
-                    sendResponse({ success: true, downloadId });
+                    if (result.success && result.method === 'external') {
+                        await this.singleDownloads.ignoreUntrackedDownload(result.downloadId);
+                        rememberBounded(this.externalDownloadIds, result.downloadId, true);
+                        const { downloadId: _downloadId, ...response } = result;
+                        sendResponse(response);
+                    } else {
+                        sendResponse(result);
+                    }
                     break;
+                }
 
                 case 'downloadImages':
                     console.log('Background: Received downloadImages request with', request.images?.length || 0, 'images');
@@ -232,6 +304,15 @@ class PinVaultProBackground {
 
                 case 'finishAutoBatchSession':
                     sendResponse({ success: await this.batchCoordinator.finishAutoSession(request.jobId, sender.tab?.id) });
+                    break;
+
+                case 'stopAutoBatchAfterCurrent':
+                    sendResponse({
+                        success: await this.batchCoordinator.stopAutoBatchAfterCurrent(
+                            request.jobId,
+                            request.continueAutoScroll === true
+                        )
+                    });
                     break;
 
                 case 'cancelDownload':
@@ -345,59 +426,8 @@ class PinVaultProBackground {
         }
     }
 
-    async downloadSingleImage(imageData, settings, targetTabId = null, imageId = null) {
-        try {
-            console.log('Starting download for:', imageData);
-            const downloadUrl = settings?.highQuality === false
-                ? imageData.url
-                : this.getHighQualityUrl(imageData.url);
-
-            const singleTimestamp = this.formatLocalTimestamp();
-            const filename = this.buildSingleFilename(
-                singleTimestamp,
-                downloadUrl,
-                imageData.originalFilename
-            );
-            const requestedFilename = buildSingleDownloadPath(filename);
-
-            const downloadOptions: chrome.downloads.DownloadOptions = {
-                url: downloadUrl,
-                filename: requestedFilename,
-                conflictAction: 'uniquify',
-                saveAs: false
-            };
-
-            console.log('Download options:', downloadOptions);
-
-            const downloadId = await chrome.downloads.download(downloadOptions);
-            console.log('Download started with ID:', downloadId);
-
-            // Track download
-            this.activeDownloads.set(downloadId, {
-                imageData,
-                settings,
-                startTime: Date.now(),
-                status: 'downloading',
-                isBatch: false,
-                targetTabId: typeof targetTabId === 'number' ? targetTabId : null,
-                imageId: typeof imageId === 'string' && imageId ? imageId : null,
-                requestedFilename
-            });
-
-            await this.singleDownloads.register({
-                downloadId,
-                targetTabId: typeof targetTabId === 'number' ? targetTabId : null,
-                imageId: typeof imageId === 'string' && imageId ? imageId : null,
-                requestedFilename
-            });
-
-            return downloadId;
-
-        } catch (error) {
-            console.error('Error downloading image:', error);
-            console.error('Image data:', imageData);
-            throw error;
-        }
+    async downloadSingleImage(imageData, settings, targetTabId = null, imageId = null): Promise<SingleImageDownloadResult> {
+        return this.singleImageDownloads.start({ imageData, settings, targetTabId, imageId });
     }
 
     normalizeImageUrlForDeduplication(image, settings) {
@@ -446,11 +476,18 @@ class PinVaultProBackground {
     handleDownloadChange(downloadDelta) {
         const downloadId = downloadDelta.id;
         const downloadInfo = this.activeDownloads.get(downloadId);
-
-        this.batchCoordinator.handleDownloadChange(downloadDelta, downloadInfo);
         const state = downloadDelta.state?.current;
+
+        if (
+            (state === 'complete' || state === 'interrupted')
+            && this.externalDownloadIds.delete(downloadId)
+        ) {
+            return;
+        }
+
+        const batchHandled = this.batchCoordinator.handleDownloadChange(downloadDelta, downloadInfo);
         if (state !== 'complete' && state !== 'interrupted') return;
-        if (!downloadInfo?.isBatch) {
+        if (!batchHandled && !downloadInfo?.isBatch) {
             void this.singleDownloads.handleTerminal(
                 downloadId,
                 state,
@@ -462,10 +499,16 @@ class PinVaultProBackground {
     handleDownloadFilename(downloadItem, suggest) {
         // Allow custom filename logic if needed
         const downloadInfo = this.activeDownloads.get(downloadItem.id);
+        const pendingFilename = this.takeRequestedFilename(downloadItem.url);
 
         if (downloadInfo?.requestedFilename) {
             suggest({
                 filename: downloadInfo.requestedFilename,
+                conflictAction: 'uniquify'
+            });
+        } else if (pendingFilename) {
+            suggest({
+                filename: pendingFilename,
                 conflictAction: 'uniquify'
             });
         } else if (downloadInfo && downloadInfo.settings.customPath) {
@@ -493,6 +536,24 @@ class PinVaultProBackground {
 
     buildIndexedFilename(sequence, timestamp, url, originalFilename) {
         return buildIndexedFilenameHelper(sequence, timestamp, url, originalFilename);
+    }
+
+    rememberRequestedFilename(url, filename) {
+        if (typeof url === 'string' && url && typeof filename === 'string' && filename) {
+            this.requestedFilenameByUrl.set(url, filename);
+        }
+    }
+
+    takeRequestedFilename(url) {
+        if (typeof url === 'string' && this.requestedFilenameByUrl.has(url)) {
+            const filename = this.requestedFilenameByUrl.get(url);
+            this.requestedFilenameByUrl.delete(url);
+            return filename;
+        }
+        const first = this.requestedFilenameByUrl.entries().next().value;
+        if (!first) return undefined;
+        this.requestedFilenameByUrl.delete(first[0]);
+        return first[1];
     }
 
     resolveImageExtension(url, originalFilename) {

@@ -18,6 +18,7 @@ function record(downloadId = 41) {
     targetTabId: 7,
     imageId: 'img-1',
     requestedFilename: 'PinPinto/a.jpg',
+    blobLeaseJobId: `single:request-${downloadId}:file`,
     state: 'pending',
     createdAt: 1
   };
@@ -131,4 +132,77 @@ test('tab disappearance removes pending metadata without stale content messaging
   assert.deepEqual(notifications, []);
   assert.deepEqual(removed, [71]);
   assert.deepEqual((await registry.getRecords()).map(({ downloadId }) => downloadId), [72]);
+});
+
+test('terminal settlement awaits one Blob lease cleanup and exposes only active leases', async () => {
+  const storage = createStorage();
+  const releases = [];
+  const { SingleDownloadRegistry } = await loadTsModule('src/background/single-download-registry.ts');
+  const registry = new SingleDownloadRegistry({
+    storage,
+    async search({ id }) { return [{ id, state: 'in_progress' }]; },
+    async onRemoved(meta) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      releases.push(meta.blobLeaseJobId);
+    }
+  });
+
+  await registry.register({
+    downloadId: 81,
+    targetTabId: 7,
+    imageId: 'img-1',
+    requestedFilename: 'PinPinto/a.jpg',
+    blobLeaseJobId: 'single:request-81:file'
+  });
+  assert.deepEqual(await registry.getActiveBlobLeaseJobIds(), ['single:request-81:file']);
+
+  await registry.handleTerminal(81, 'interrupted', 'FILE_BLOCKED');
+  await registry.handleTerminal(81, 'complete');
+
+  assert.deepEqual(releases, ['single:request-81:file']);
+  assert.deepEqual(await registry.getActiveBlobLeaseJobIds(), []);
+});
+
+test('restart and tab removal both await lease cleanup exactly once', async () => {
+  const { SingleDownloadRegistry } = await loadTsModule('src/background/single-download-registry.ts');
+
+  for (const scenario of ['restart-complete', 'tab-close']) {
+    const storage = createStorage([record(91)]);
+    const releases = [];
+    const registry = new SingleDownloadRegistry({
+      storage,
+      async search({ id }) {
+        return [{ id, state: scenario === 'restart-complete' ? 'complete' : 'in_progress' }];
+      },
+      async onRemoved(meta) { releases.push(meta.blobLeaseJobId); }
+    });
+
+    if (scenario === 'restart-complete') await registry.getRecords();
+    else {
+      await registry.getRecords();
+      await registry.removeForTab(7);
+      await registry.handleTerminal(91, 'complete');
+    }
+
+    assert.deepEqual(releases, ['single:request-91:file']);
+    assert.deepEqual(storage.current(), []);
+  }
+});
+
+test('an explicitly untracked external id discards any early terminal buffer', async () => {
+  const storage = createStorage();
+  const notifications = [];
+  const { SingleDownloadRegistry } = await loadTsModule('src/background/single-download-registry.ts');
+  const registry = new SingleDownloadRegistry({
+    storage,
+    async search({ id }) { return [{ id, state: 'in_progress' }]; },
+    async notify(meta) { notifications.push(meta.downloadId); }
+  });
+
+  await registry.handleTerminal(101, 'complete');
+  await registry.ignoreUntrackedDownload(101);
+  await registry.handleTerminal(101, 'interrupted', 'late external terminal');
+
+  assert.deepEqual(notifications, []);
+  assert.deepEqual(await registry.getRecords(), []);
 });

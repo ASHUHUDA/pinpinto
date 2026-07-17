@@ -1,31 +1,13 @@
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadTsModule } from './helpers/load-ts-module.mjs';
+import {
+  installMinimalDom,
+  restoreActionRuntimeGlobals
+} from './helpers/action-runtime-harness.mjs';
 
-function installMinimalDom() {
-  const elements = new Map();
-
-  globalThis.document = {
-    getElementById(id) {
-      if (!elements.has(id)) {
-        elements.set(id, {
-          id,
-          style: {},
-          textContent: '0'
-        });
-      }
-      return elements.get(id);
-    }
-  };
-
-  globalThis.window = globalThis;
-  globalThis.setTimeout = (callback) => {
-    callback();
-    return 1;
-  };
-  globalThis.clearTimeout = () => {};
-}
+afterEach(restoreActionRuntimeGlobals);
 
 test('popup auto-batch delegates scrolling ownership to the background task', async () => {
   installMinimalDom();
@@ -103,7 +85,6 @@ test('popup auto-batch delegates scrolling ownership to the background task', as
   assert.deepEqual(savedSettings.at(-1), ['autoScroll', true]);
   assert.equal(timerCallbacks.length, 0);
 });
-
 test('sidebar auto-batch delegates scrolling ownership to the background task', async () => {
   installMinimalDom();
 
@@ -178,6 +159,68 @@ test('sidebar auto-batch delegates scrolling ownership to the background task', 
   assert.equal(timerCallbacks.length, 0);
 });
 
+
+test('popup auto-batch honors the visible limit input before storage catches up', async () => {
+  installMinimalDom();
+  document.getElementById('totalImages').textContent = '25';
+  document.getElementById('autoBatchLimit').value = '25';
+  document.getElementById('autoBatchTotalBatches').value = '3';
+
+  globalThis.chrome = {
+    tabs: {
+      async sendMessage(tabId, payload) {
+        if (payload.action === 'getViewportAnchor') return { anchorIndex: 0 };
+        return { success: true };
+      }
+    },
+    storage: {
+      sync: {
+        async get() {
+          return {
+            highQuality: true,
+            autoScroll: false,
+            autoBatchDownload: true,
+            autoBatchLimit: 100,
+            autoBatchTotalBatches: 0,
+            filenameFormat: 'title_date',
+            folderOrganization: 'date',
+            customFolder: ''
+          };
+        }
+      }
+    }
+  };
+
+  const popupActions = await loadTsModule('src/popup/download-actions.ts');
+  const startCalls = [];
+  const savedSettings = [];
+  const controller = {
+    language: 'zh',
+    isBatchingNow: false,
+    isAutoScrolling: false,
+    autoScrollStatsTimer: null,
+    async getActivePinterestTab() { return { id: 123, url: 'https://www.pinterest.com/test/' }; },
+    async rememberSidebarTargetTab() {},
+    async ensureContentScriptInjected() { return true; },
+    updateStatsDisplay() {},
+    async saveSetting(key, value) { savedSettings.push([key, value]); },
+    setAutoScrollUi() {},
+    async updateImageCounts() {},
+    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-visible-25' }; },
+    async cancelBatchTask() { return true; },
+    async toggleAutoScroll() {}
+  };
+
+  await popupActions.startDownload(controller, { autoBatchMode: true });
+
+  assert.equal(startCalls[0].autoBatchLimit, 25);
+  assert.equal(startCalls[0].autoBatchTotalBatches, 3);
+  assert.deepEqual(savedSettings, [
+    ['autoBatchLimit', 25],
+    ['autoBatchTotalBatches', 3]
+  ]);
+});
+
 test('popup auto-batch uses the configured image limit', async () => {
   installMinimalDom();
   document.getElementById('totalImages').textContent = '25';
@@ -199,6 +242,7 @@ test('popup auto-batch uses the configured image limit', async () => {
             autoScroll: false,
             autoBatchDownload: true,
             autoBatchLimit: 25,
+            autoBatchTotalBatches: 3,
             filenameFormat: 'title_date',
             folderOrganization: 'date',
             customFolder: ''
@@ -238,6 +282,66 @@ test('popup auto-batch uses the configured image limit', async () => {
   assert.equal(startCalls[0].mode, 'auto');
   assert.equal(startCalls[0].targetTabId, 123);
   assert.equal(startCalls[0].autoBatchLimit, 25);
+  assert.equal(startCalls[0].autoBatchTotalBatches, 3);
+});
+
+
+test('sidebar auto-batch honors the visible limit input before storage catches up', async () => {
+  installMinimalDom();
+  document.getElementById('totalImages').textContent = '25';
+  document.getElementById('autoBatchLimit').value = '25';
+  document.getElementById('autoBatchTotalBatches').value = '3';
+
+  globalThis.chrome = {
+    tabs: {
+      async sendMessage(tabId, payload) {
+        if (payload.action === 'getViewportAnchor') return { anchorIndex: 0 };
+        return { success: true };
+      }
+    },
+    storage: {
+      sync: {
+        async get() {
+          return {
+            highQuality: true,
+            autoScroll: false,
+            autoBatchDownload: true,
+            autoBatchLimit: 100,
+            autoBatchTotalBatches: 0,
+            filenameFormat: 'title_date',
+            folderOrganization: 'date',
+            customFolder: ''
+          };
+        }
+      }
+    }
+  };
+
+  const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
+  const startCalls = [];
+  const savedSettings = [];
+  const controller = {
+    isBatchingNow: false,
+    autoScrollStatsTimer: null,
+    async resolveTargetTab() { return { id: 321, url: 'https://www.pinterest.com/test/' }; },
+    async ensureContentScriptInjected() { return true; },
+    updateStatsDisplay() {},
+    async updateStats() {},
+    async saveSetting(key, value) { savedSettings.push([key, value]); },
+    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-visible-25' }; },
+    async cancelBatchTask() { return true; },
+    async toggleAutoScroll() {},
+    t() { return ''; }
+  };
+
+  await sidebarActions.startDownload(controller, { autoBatchMode: true });
+
+  assert.equal(startCalls[0].autoBatchLimit, 25);
+  assert.equal(startCalls[0].autoBatchTotalBatches, 3);
+  assert.deepEqual(savedSettings, [
+    ['autoBatchLimit', 25],
+    ['autoBatchTotalBatches', 3]
+  ]);
 });
 
 test('sidebar auto-batch uses the configured image limit', async () => {
@@ -261,6 +365,7 @@ test('sidebar auto-batch uses the configured image limit', async () => {
             autoScroll: false,
             autoBatchDownload: true,
             autoBatchLimit: 25,
+            autoBatchTotalBatches: 3,
             filenameFormat: 'title_date',
             folderOrganization: 'date',
             customFolder: ''
@@ -297,119 +402,8 @@ test('sidebar auto-batch uses the configured image limit', async () => {
   assert.equal(startCalls[0].mode, 'auto');
   assert.equal(startCalls[0].targetTabId, 321);
   assert.equal(startCalls[0].autoBatchLimit, 25);
-});
-
-test('popup auto-batch sends the configured total batch count', async () => {
-  installMinimalDom();
-  document.getElementById('totalImages').textContent = '25';
-  document.getElementById('autoBatchTotalBatches').value = '3';
-
-  globalThis.chrome = {
-    tabs: {
-      async sendMessage(tabId, payload) {
-        if (payload.action === 'getViewportAnchor') return { anchorIndex: 0 };
-        return { success: true };
-      }
-    },
-    storage: {
-      sync: {
-        async get() {
-          return {
-            highQuality: true,
-            autoScroll: false,
-            autoBatchDownload: true,
-            autoBatchLimit: 25,
-            autoBatchTotalBatches: 0,
-            filenameFormat: 'title_date',
-            folderOrganization: 'date',
-            customFolder: ''
-          };
-        }
-      }
-    }
-  };
-
-  const popupActions = await loadTsModule('src/popup/download-actions.ts');
-  const startCalls = [];
-  const savedSettings = [];
-  const controller = {
-    language: 'zh',
-    isBatchingNow: false,
-    isAutoScrolling: false,
-    autoScrollStatsTimer: null,
-    async getActivePinterestTab() { return { id: 123, url: 'https://www.pinterest.com/test/' }; },
-    async rememberSidebarTargetTab() {},
-    async ensureContentScriptInjected() { return true; },
-    updateStatsDisplay() {},
-    async saveSetting(key, value) { savedSettings.push([key, value]); },
-    setAutoScrollUi() {},
-    async updateImageCounts() {},
-    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-total-3' }; },
-    async cancelBatchTask() { return true; },
-    async toggleAutoScroll() {}
-  };
-
-  await popupActions.startDownload(controller, { autoBatchMode: true });
-
   assert.equal(startCalls[0].autoBatchTotalBatches, 3);
-  assert.equal(startCalls[0].settings.autoBatchTotalBatches, 3);
-  assert.deepEqual(savedSettings, [['autoBatchTotalBatches', 3]]);
 });
-
-test('sidebar auto-batch sends the configured total batch count', async () => {
-  installMinimalDom();
-  document.getElementById('totalImages').textContent = '25';
-  document.getElementById('autoBatchTotalBatches').value = '3';
-
-  globalThis.chrome = {
-    tabs: {
-      async sendMessage(tabId, payload) {
-        if (payload.action === 'getViewportAnchor') return { anchorIndex: 0 };
-        return { success: true };
-      }
-    },
-    storage: {
-      sync: {
-        async get() {
-          return {
-            highQuality: true,
-            autoScroll: false,
-            autoBatchDownload: true,
-            autoBatchLimit: 25,
-            autoBatchTotalBatches: 0,
-            filenameFormat: 'title_date',
-            folderOrganization: 'date',
-            customFolder: ''
-          };
-        }
-      }
-    }
-  };
-
-  const sidebarActions = await loadTsModule('src/sidebar/download-actions.ts');
-  const startCalls = [];
-  const savedSettings = [];
-  const controller = {
-    isBatchingNow: false,
-    autoScrollStatsTimer: null,
-    async resolveTargetTab() { return { id: 321, url: 'https://www.pinterest.com/test/' }; },
-    async ensureContentScriptInjected() { return true; },
-    updateStatsDisplay() {},
-    async updateStats() {},
-    async saveSetting(key, value) { savedSettings.push([key, value]); },
-    async startBatchTask(request) { startCalls.push(request); return { accepted: true, jobId: 'job-total-3' }; },
-    async cancelBatchTask() { return true; },
-    async toggleAutoScroll() {},
-    t() { return ''; }
-  };
-
-  await sidebarActions.startDownload(controller, { autoBatchMode: true });
-
-  assert.equal(startCalls[0].autoBatchTotalBatches, 3);
-  assert.equal(startCalls[0].settings.autoBatchTotalBatches, 3);
-  assert.deepEqual(savedSettings, [['autoBatchTotalBatches', 3]]);
-});
-
 
 test('popup cancelDownload sends batch-cancel message and clears local auto options', async () => {
   installMinimalDom();
@@ -596,141 +590,4 @@ test('sidebar deselectAll clears the page session and resets batching state', as
   );
   assert.equal(controller.isBatchingNow, false);
   assert.equal(updateStatsCalls, 1);
-});
-
-test('background generic cancel does not cancel an in-flight single-image download', async () => {
-  installMinimalDom();
-
-  let onMessageListener;
-  const downloadCalls = [];
-  const cancelCalls = [];
-
-  globalThis.chrome = {
-    runtime: {
-      id: 'pinpinto-test',
-      onInstalled: {
-        addListener() {}
-      },
-      onMessage: {
-        addListener(listener) {
-          onMessageListener = listener;
-        }
-      },
-      async sendMessage() {},
-      openOptionsPage() {}
-    },
-    tabs: {
-      onUpdated: {
-        addListener() {}
-      },
-      onRemoved: {
-        addListener() {}
-      },
-      async query() {
-        return [];
-      },
-      async sendMessage() {},
-      async get() {
-        return null;
-      }
-    },
-    contextMenus: {
-      removeAll(callback) {
-        callback?.();
-      },
-      create() {},
-      onClicked: {
-        addListener() {}
-      }
-    },
-    downloads: {
-      onChanged: {
-        addListener() {}
-      },
-      onDeterminingFilename: {
-        addListener() {}
-      },
-      async download(options) {
-        downloadCalls.push(options);
-        return 77;
-      },
-      async cancel(downloadId) {
-        cancelCalls.push(downloadId);
-      }
-    },
-    sidePanel: {
-      setPanelBehavior() {}
-    },
-    storage: {
-      sync: {
-        async get() { return {}; },
-        async set() {},
-        async remove() {}
-      },
-      local: {
-        async get() { return {}; },
-        async set() {}
-      },
-      session: {
-        async get() { return {}; },
-        async set() {}
-      }
-    },
-    scripting: {
-      async executeScript() {
-        return [{ result: true }];
-      }
-    }
-  };
-
-  await loadTsModule('src/background.ts');
-
-  assert.equal(typeof onMessageListener, 'function');
-
-  const originalDate = globalThis.Date;
-  class FixedDate extends Date {
-    constructor(...args) {
-      if (args.length === 0) {
-        super('2026-05-05T10:11:12Z');
-      } else {
-        super(...args);
-      }
-    }
-  }
-  globalThis.Date = FixedDate;
-
-  try {
-    const singleDownloadResponse = await new Promise((resolve) => {
-      onMessageListener(
-        {
-          action: 'downloadImage',
-          imageData: {
-            url: 'https://example.com/a.png',
-            title: 'A',
-            originalFilename: 'a.png'
-          },
-          settings: {}
-        },
-        {},
-        resolve
-      );
-    });
-
-    assert.equal(singleDownloadResponse.success, true);
-    assert.equal(downloadCalls.length, 1);
-    assert.equal(downloadCalls[0].filename, 'PinPinto/PinPinto-20260505_181112.png');
-
-    const cancelResponse = await new Promise((resolve) => {
-      onMessageListener(
-        { action: 'cancelDownload' },
-        {},
-        resolve
-      );
-    });
-
-    assert.equal(cancelResponse.success, true);
-    assert.deepEqual(cancelCalls, []);
-  } finally {
-    globalThis.Date = originalDate;
-  }
 });

@@ -3,6 +3,7 @@ console.log('PinPinto content script: Starting to load...');
 
 import { createOverlayControls as createImageOverlayControls } from './content/overlay-controls';
 import { AutoBatchSessionController, restoreAutoBatchSession } from './content/auto-batch-session';
+import { AutoSelectionController } from './content/auto-selection';
 import { classifyPinterestImage } from './content/image-classifier';
 import {
     getHighQualityImageUrl,
@@ -35,8 +36,10 @@ if (window.pinVaultContentLoaded) {
         autoScrollStopReason: 'manual' | 'exhausted' | null;
         autoScrollStoppedAt: number | null;
         scanTimeout?: number;
+        scanSuppressedUntil: number;
         contextMenuImage?: HTMLImageElement | null;
         autoBatchSession: AutoBatchSessionController;
+        autoSelection: AutoSelectionController;
         singleDownloads: SingleDownloadController;
 
         constructor() {
@@ -50,6 +53,8 @@ if (window.pinVaultContentLoaded) {
             this.maxScrollAttempts = 5;
             this.autoScrollStopReason = null;
             this.autoScrollStoppedAt = null;
+            this.scanSuppressedUntil = 0;
+            this.autoSelection = new AutoSelectionController((imageId) => this.session.selectImage(imageId));
             this.singleDownloads = new SingleDownloadController();
             this.autoBatchSession = new AutoBatchSessionController({
                 scanForImages: () => this.scanForImages(),
@@ -63,6 +68,7 @@ if (window.pinVaultContentLoaded) {
                 ),
                 commitAutoBatchWindow: (input) => this.session.commitAutoBatchWindow(input),
                 startAutoScroll: () => this.startAutoScroll(),
+                pauseAutoScroll: () => this.stopAutoScroll('manual', true),
                 stopAutoScroll: () => this.stopAutoScroll('manual'),
                 getAutoScrollStopReason: () => this.autoScrollStopReason,
                 sendMessage: (message) => chrome.runtime.sendMessage(message)
@@ -157,7 +163,9 @@ if (window.pinVaultContentLoaded) {
                             break;
 
                         case 'finishAutoBatchSession':
-                            this.autoBatchSession.finish(request.jobId);
+                            this.autoBatchSession.finish(request.jobId, {
+                                continueAutoScroll: request.continueAutoScroll === true
+                            });
                             sendResponse({ success: true });
                             break;
 
@@ -239,6 +247,7 @@ if (window.pinVaultContentLoaded) {
         }
 
         scanForImages() {
+            if (Date.now() < this.scanSuppressedUntil) return;
             console.log('PinPinto: Scanning for images...');
             const beforeCount = this.session.imageElements.size;
             scanPinterestImages(document, (image) => this.processImage(image));
@@ -290,6 +299,7 @@ if (window.pinVaultContentLoaded) {
             overlayHost.appendChild(controls);
 
             // Store image data
+            const source = classifyPinterestImage(window.location.href, img);
             this.session.addImage({
                 id: imageId,
                 element: img,
@@ -302,8 +312,9 @@ if (window.pinVaultContentLoaded) {
                 domain: window.location.hostname,
                 originalFilename: this.extractOriginalFilename(img),
                 sourceKey,
-                source: classifyPinterestImage(window.location.href, img)
+                source
             });
+            this.autoSelection.registerImage(imageId, source !== 'recommendation');
         }
 
         isValidPinterestImage(img: HTMLImageElement) {
@@ -373,7 +384,8 @@ if (window.pinVaultContentLoaded) {
             if (!imageData) return;
             await this.singleDownloads.start(imageId, singleDownloadBtn, async () => {
                 const settings = await chrome.storage.sync.get({
-                    highQuality: true
+                    highQuality: true,
+                    singleImageDownloadMethod: 'browser'
                 });
                 return chrome.runtime.sendMessage({
                     action: 'downloadImage',
@@ -457,7 +469,13 @@ if (window.pinVaultContentLoaded) {
         }
 
         clearAllImages() {
+            this.scanSuppressedUntil = Date.now() + 3000;
+            if (this.scanTimeout) {
+                clearTimeout(this.scanTimeout);
+                this.scanTimeout = undefined;
+            }
             this.autoBatchSession.reset();
+            this.autoSelection.reset();
             this.singleDownloads.clear();
             this.session.clearAllImages();
 
@@ -467,6 +485,7 @@ if (window.pinVaultContentLoaded) {
         }
 
         startAutoScroll() {
+            this.autoSelection.enable();
             if (this.isAutoScrolling) return;
 
             this.isAutoScrolling = true;
@@ -522,7 +541,8 @@ if (window.pinVaultContentLoaded) {
             }, 2500);
         }
 
-        stopAutoScroll(reason: 'manual' | 'exhausted' = 'manual') {
+        stopAutoScroll(reason: 'manual' | 'exhausted' = 'manual', preserveAutoSelection = false) {
+            if (!preserveAutoSelection) this.autoSelection.disable();
             this.isAutoScrolling = false;
             this.autoScrollStopReason = reason;
             this.autoScrollStoppedAt = Date.now();
@@ -632,7 +652,7 @@ if (window.pinVaultContentLoaded) {
             if (typeof imageId !== 'string' || !imageId) {
                 return { success: false, removed: false, error: 'Missing imageId.' };
             }
-            if (!['complete', 'rejected', 'interrupted'].includes(settlement.state)) {
+            if (!['submitted', 'complete', 'rejected', 'interrupted'].includes(settlement.state)) {
                 return { success: false, removed: false, error: 'Invalid settlement state.' };
             }
             const state = this.singleDownloads.settle(imageId, settlement);

@@ -8,6 +8,7 @@ export type SingleDownloadRecord = {
     targetTabId: number | null;
     imageId: string | null;
     requestedFilename: string;
+    blobLeaseJobId?: string;
     state: 'pending';
     createdAt: number;
 };
@@ -21,7 +22,7 @@ type RegistryOptions = {
     storage?: StorageArea;
     search?: (query: chrome.downloads.DownloadQuery) => Promise<chrome.downloads.DownloadItem[]>;
     notify?: (record: SingleDownloadRecord, state: 'complete' | 'interrupted', error?: string) => Promise<void>;
-    onRemoved?: (record: SingleDownloadRecord) => void;
+    onRemoved?: (record: SingleDownloadRecord) => void | Promise<void>;
     now?: () => number;
 };
 
@@ -53,15 +54,23 @@ export class SingleDownloadRegistry {
         return this.enqueue(async () => {
             const record: SingleDownloadRecord = { ...input, state: 'pending', createdAt: this.now() };
             this.records.set(record.downloadId, record);
-            await this.persist();
-            const early = this.earlyTerminals.get(record.downloadId);
-            if (early) {
-                this.earlyTerminals.delete(record.downloadId);
-                await this.settleKnown(record, early.state, early.error);
+            try {
+                await this.persist();
+                const early = this.earlyTerminals.get(record.downloadId);
+                if (early) {
+                    this.earlyTerminals.delete(record.downloadId);
+                    await this.settleKnown(record, early.state, early.error);
+                    return record;
+                }
+                await this.reconcileKnown(record, false);
                 return record;
+            } catch (error) {
+                if (this.records.delete(record.downloadId)) {
+                    rememberBounded(this.settledIds, record.downloadId, true);
+                    await this.onRemoved(record);
+                }
+                throw error;
             }
-            await this.reconcileKnown(record, false);
-            return record;
         });
     }
 
@@ -78,6 +87,14 @@ export class SingleDownloadRegistry {
         });
     }
 
+    async ignoreUntrackedDownload(downloadId: number): Promise<void> {
+        await this.ready;
+        await this.enqueue(async () => {
+            this.earlyTerminals.delete(downloadId);
+            rememberBounded(this.settledIds, downloadId, true);
+        });
+    }
+
     async removeForTab(tabId: number): Promise<void> {
         await this.ready;
         await this.enqueue(async () => {
@@ -85,7 +102,7 @@ export class SingleDownloadRegistry {
                 if (record.targetTabId !== tabId) continue;
                 this.records.delete(record.downloadId);
                 rememberBounded(this.settledIds, record.downloadId, true);
-                this.onRemoved(record);
+                await this.onRemoved(record);
             }
             await this.persist();
         });
@@ -95,6 +112,13 @@ export class SingleDownloadRegistry {
         await this.ready;
         await this.queue;
         return [...this.records.values()].map((record) => ({ ...record }));
+    }
+
+    async getActiveBlobLeaseJobIds(): Promise<string[]> {
+        const records = await this.getRecords();
+        return [...new Set(records
+            .map((record) => record.blobLeaseJobId)
+            .filter((jobId): jobId is string => typeof jobId === 'string' && jobId.length > 0))];
     }
 
     private async initialize(): Promise<void> {
@@ -134,8 +158,11 @@ export class SingleDownloadRegistry {
         if (record.targetTabId !== null && record.imageId) {
             await this.notify(record, contentState, error).catch(() => {});
         }
-        this.onRemoved(record);
-        await this.persist();
+        try {
+            await this.onRemoved(record);
+        } finally {
+            await this.persist();
+        }
     }
 
     private async persist(): Promise<void> {
