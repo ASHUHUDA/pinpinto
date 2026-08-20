@@ -156,6 +156,9 @@ test('popup and sidebar share persisted download controls, localized tooltip mar
   assert.match(sharedCss, /\.download-method-select[\s\S]*?background:\s*var\(--bg-base/);
   assert.match(sharedCss, /\.settings-tooltip[\s\S]*?background:\s*color-mix\([\s\S]*?var\(--bg-base/);
   assert.match(sharedCss, /\.batch-limit-panel\s*\{[\s\S]*?overflow:\s*visible/);
+  assert.match(sharedCss, /\.settings-panel\.batch-limit-panel,[\s\S]*?\.panel-section\.batch-limit-panel\s*\{[\s\S]*?overflow:\s*visible/);
+  assert.match(sharedCss, /top:\s*calc\(100% \+ 7px\)/);
+  assert.doesNotMatch(sharedCss, /bottom:\s*calc\(100% \+ 7px\)/);
   assert.match(sharedCss, /\.batch-limit-panel \.settings-heading-with-info \.panel-title\s*\{[\s\S]*?margin:\s*0/);
   assert.doesNotMatch(sharedCss, /--background-color|--border-color|--primary-color/);
   assert.match(sharedCss, /:hover[\s\S]*?\.settings-tooltip/);
@@ -165,12 +168,12 @@ test('popup and sidebar share persisted download controls, localized tooltip mar
     'Download as ZIP',
     'Single-image download',
     'External downloader',
-    'Total batches: leave blank or enter 0 for unlimited batches',
+    'Images per batch: 1–500. Total batches: leave blank or enter 0 for unlimited batches',
     'Cancel current task',
     '压缩包下载',
     '单图下载方式',
     '外部下载器',
-    '总批下载数量：留空或输入 0 为不限批次',
+    '每批下载数量：1–500。总批下载数量：留空或输入 0 为不限批次',
     '取消当前任务'
   ]) {
     assert.ok(translations.includes(text), `missing translation: ${text}`);

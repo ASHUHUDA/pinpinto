@@ -6,6 +6,7 @@ import { loadTsModule } from './helpers/load-ts-module.mjs';
 test('download batching helpers preserve auto batch limit and thresholds', async () => {
   const {
     AUTO_BATCH_DOWNLOAD_LIMIT,
+    MAX_AUTO_BATCH_DOWNLOAD_LIMIT,
     getNextBatchThreshold,
     normalizeAutoBatchLimit,
     normalizeAutoBatchTotalBatches,
@@ -13,14 +14,17 @@ test('download batching helpers preserve auto batch limit and thresholds', async
   } = await loadTsModule('src/shared/download-batching.ts');
 
   assert.equal(AUTO_BATCH_DOWNLOAD_LIMIT, 100);
+  assert.equal(MAX_AUTO_BATCH_DOWNLOAD_LIMIT, 500);
   assert.equal(normalizeAutoBatchLimit(undefined), 100);
   assert.equal(normalizeAutoBatchLimit(''), 100);
   assert.equal(normalizeAutoBatchLimit('abc'), 100);
   assert.equal(normalizeAutoBatchLimit(25), 25);
   assert.equal(normalizeAutoBatchLimit('25.9'), 25);
   assert.equal(normalizeAutoBatchLimit(0), 1);
-  assert.equal(normalizeAutoBatchLimit(101), 100);
-  assert.equal(normalizeAutoBatchLimit(1001), 100);
+  assert.equal(normalizeAutoBatchLimit(101), 101);
+  assert.equal(normalizeAutoBatchLimit(500), 500);
+  assert.equal(normalizeAutoBatchLimit(501), 500);
+  assert.equal(normalizeAutoBatchLimit(1001), 500);
   assert.equal(normalizeAutoBatchTotalBatches(undefined), 0);
   assert.equal(normalizeAutoBatchTotalBatches(''), 0);
   assert.equal(normalizeAutoBatchTotalBatches('abc'), 0);

@@ -5,7 +5,7 @@ import {
     type BatchTaskMode,
     type BatchTaskSnapshot
 } from '../shared/batch-task';
-import { normalizeAutoBatchTotalBatches } from '../shared/download-batching';
+import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from '../shared/download-batching';
 
 export const BATCH_TASK_STORAGE_KEY = 'pinpintoBatchTask';
 
@@ -98,7 +98,7 @@ export class BatchTaskManager {
                 pendingFallbackDownloadIds: [],
                 activeWindow: null,
                 autoSessionFinished: input.mode === 'manual',
-                autoBatchLimit: Math.max(1, Math.floor(input.autoBatchLimit ?? 100)),
+                autoBatchLimit: normalizeAutoBatchLimit(input.autoBatchLimit),
                 autoBatchTotalBatches: normalizeAutoBatchTotalBatches(input.autoBatchTotalBatches),
                 autoBatchCompletedBatches: 0,
                 autoStopRequested: false,
@@ -247,7 +247,7 @@ function normalizeSnapshot(candidate: BatchTaskSnapshot): BatchTaskSnapshot {
         individualCount: nonNegativeInteger(candidate.individualCount),
         failedCount: nonNegativeInteger(candidate.failedCount),
         cancelledCount: nonNegativeInteger(candidate.cancelledCount),
-        autoBatchLimit: Math.max(1, Math.floor(candidate.autoBatchLimit ?? 100)),
+        autoBatchLimit: normalizeAutoBatchLimit(candidate.autoBatchLimit),
         autoBatchTotalBatches: normalizeAutoBatchTotalBatches(candidate.autoBatchTotalBatches),
         autoBatchCompletedBatches: Math.max(0, Math.floor(candidate.autoBatchCompletedBatches ?? 0)),
         autoStopRequested: candidate.autoStopRequested === true,

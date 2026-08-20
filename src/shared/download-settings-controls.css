@@ -69,6 +69,11 @@
     overflow: visible;
 }
 
+.settings-panel.batch-limit-panel,
+.panel-section.batch-limit-panel {
+    overflow: visible;
+}
+
 .settings-heading-with-info {
     display: flex;
     align-items: center;
@@ -92,6 +97,12 @@
     position: relative;
     display: inline-flex;
     flex: 0 0 auto;
+    z-index: 1;
+}
+
+.settings-info:hover,
+.settings-info:focus-within {
+    z-index: 60;
 }
 
 .settings-info-button {
@@ -133,10 +144,11 @@
 
 .settings-tooltip {
     position: absolute;
-    z-index: 30;
-    bottom: calc(100% + 7px);
+    z-index: 60;
+    top: calc(100% + 7px);
+    bottom: auto;
     left: 0;
-    width: min(220px, calc(100vw - 160px));
+    width: min(240px, calc(100vw - 40px));
     min-width: 160px;
     padding: 8px 10px;
     border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.15));
@@ -153,7 +165,7 @@
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transform: translateY(2px);
+    transform: translateY(-2px);
     transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
 }
 

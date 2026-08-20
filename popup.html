@@ -24,7 +24,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-            <span class="badge-version">v1.5.13</span>
+            <span class="badge-version">v1.5.14</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -157,17 +157,17 @@
                             </svg>
                             <span class="settings-info-label" data-i18n="action.batchInfo">Batch information</span>
                         </button>
-                        <span id="autoBatchInfoTooltip" class="settings-tooltip" role="tooltip" data-i18n="setting.autoBatchTotalBatchesHelp">Total batches: leave blank or enter 0 for unlimited batches</span>
+                        <span id="autoBatchInfoTooltip" class="settings-tooltip" role="tooltip" data-i18n="setting.autoBatchTotalBatchesHelp">Images per batch: 1–500. Total batches: leave blank or enter 0 for unlimited batches</span>
                     </span>
                 </div>
                 <div class="batch-limit-area">
                     <label class="batch-limit-row" for="autoBatchLimit">
                         <span class="batch-limit-label" data-i18n="setting.autoBatchLimit">Images per batch</span>
-                        <input class="batch-limit-input" type="text" id="autoBatchLimit" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="100">
+                        <input class="batch-limit-input" type="text" id="autoBatchLimit" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="100" aria-describedby="autoBatchInfoTooltip">
                     </label>
                     <label class="batch-limit-row" for="autoBatchTotalBatches">
                         <span class="batch-limit-label" data-i18n="setting.autoBatchTotalBatches">Total batches</span>
-                        <input class="batch-limit-input" type="text" id="autoBatchTotalBatches" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="">
+                        <input class="batch-limit-input" type="text" id="autoBatchTotalBatches" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="" aria-describedby="autoBatchInfoTooltip">
                     </label>
                 </div>
             </div>
