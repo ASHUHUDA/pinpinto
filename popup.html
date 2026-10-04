@@ -25,7 +25,7 @@
                     <h1>PinPinto</h1>
                     <span class="subtitle" data-i18n="app.subtitle">Pinterest Downloader</span>
                 </div>
-            <span class="badge-version">v1.7.0</span>
+            <span class="badge-version">v1.7.1</span>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" id="themeToggle" title="Toggle theme" style="display:none;">
@@ -212,12 +212,8 @@
                         </select>
                     </label>
                     <details class="aria2-config">
-                        <summary data-i18n="aria2.settings">aria2 connection settings</summary>
-                        <label for="aria2Endpoint" data-i18n="aria2.endpoint">Local RPC URL</label>
-                        <input id="aria2Endpoint" type="url" value="http://127.0.0.1:6800/jsonrpc" spellcheck="false" autocomplete="off">
-                        <button type="button" class="btn btn-ghost" id="aria2MotrixBtn" data-i18n="aria2.motrix">Use Motrix port</button>
-                        <div class="aria2-secret-heading settings-heading-with-info">
-                            <label for="aria2Secret" data-i18n="aria2.secret">RPC secret</label>
+                        <summary>
+                            <span data-i18n="aria2.settings">aria2 connection settings</span>
                             <span class="settings-info">
                                 <button type="button" id="aria2InfoButton" class="settings-info-button" aria-describedby="aria2Help">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -229,7 +225,11 @@
                                 </button>
                                 <span id="aria2Help" class="settings-tooltip" role="tooltip" data-i18n="aria2.help">Sends individual images, not ZIPs. Submission does not mean download completion. The secret stays on this device, unencrypted and unsynced, across browser restarts. Blank keeps it; select Clear secret and save to remove it.</span>
                             </span>
-                        </div>
+                        </summary>
+                        <label for="aria2Endpoint" data-i18n="aria2.endpoint">Local RPC URL</label>
+                        <input id="aria2Endpoint" type="url" value="http://127.0.0.1:6800/jsonrpc" spellcheck="false" autocomplete="off">
+                        <button type="button" class="btn btn-ghost" id="aria2MotrixBtn" data-i18n="aria2.motrix">Use Motrix port</button>
+                        <label for="aria2Secret" data-i18n="aria2.secret">RPC secret</label>
                         <input id="aria2Secret" type="password" autocomplete="off" maxlength="4096" aria-describedby="aria2Help">
                         <label class="aria2-clear"><input id="aria2ClearSecret" type="checkbox"><span data-i18n="aria2.clearSecret">Clear secret</span></label>
                         <button type="button" class="btn btn-ghost" id="aria2TestBtn" data-i18n="aria2.test">Save &amp; test</button>
