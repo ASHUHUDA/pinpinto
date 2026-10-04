@@ -1,4 +1,5 @@
 .aria2-config {
+    position: relative;
     margin-top: 12px;
     color: var(--text-primary, #f2f2f2);
     font-size: 12px;
@@ -22,3 +23,12 @@
 .aria2-config .aria2-clear { display: flex; gap: 8px; align-items: center; }
 .aria2-config p { color: var(--text-secondary, #999); overflow-wrap: anywhere; }
 .aria2-config button { margin-top: 6px; }
+.aria2-config .aria2-secret-heading { position: static; margin-top: 10px; }
+.aria2-config .settings-info-button { margin-top: 0; }
+/* Keep help above the RPC form, inside the settings card and away from its
+   connection inputs. The icon is near the viewport bottom in short popups. */
+.aria2-config .settings-tooltip {
+    top: auto;
+    bottom: calc(100% + 7px);
+    width: min(280px, 100%);
+}

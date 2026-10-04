@@ -22,7 +22,7 @@
             </div>
             <div class="header-info">
                 <h1>PinPinto</h1>
-            <span class="badge-version">v1.6.0</span>
+            <span class="badge-version">v1.7.0</span>
             </div>
             <div class="header-actions">
                 <div class="settings-dropdown">
@@ -172,10 +172,22 @@
                 <label for="aria2Endpoint" data-i18n="aria2.endpoint">Local RPC URL</label>
                 <input id="aria2Endpoint" type="url" value="http://127.0.0.1:6800/jsonrpc" spellcheck="false" autocomplete="off">
                 <button type="button" class="btn btn-ghost" id="aria2MotrixBtn" data-i18n="aria2.motrix">Use Motrix port</button>
-                <label for="aria2Secret" data-i18n="aria2.secret">RPC secret (session only)</label>
+                <div class="aria2-secret-heading settings-heading-with-info">
+                    <label for="aria2Secret" data-i18n="aria2.secret">RPC secret</label>
+                    <span class="settings-info">
+                        <button type="button" id="aria2InfoButton" class="settings-info-button" aria-describedby="aria2Help">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <circle cx="12" cy="12" r="9"></circle>
+                                <line x1="12" y1="11" x2="12" y2="16"></line>
+                                <circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="none"></circle>
+                            </svg>
+                            <span class="settings-info-label" data-i18n="aria2.info">aria2 information</span>
+                        </button>
+                        <span id="aria2Help" class="settings-tooltip" role="tooltip" data-i18n="aria2.help">Sends individual images, not ZIPs. Submission does not mean download completion. The secret stays on this device, unencrypted and unsynced, across browser restarts. Blank keeps it; select Clear secret and save to remove it.</span>
+                    </span>
+                </div>
                 <input id="aria2Secret" type="password" autocomplete="off" maxlength="4096" aria-describedby="aria2Help">
-                <label class="aria2-clear"><input id="aria2ClearSecret" type="checkbox"><span data-i18n="aria2.clearSecret">Clear saved secret</span></label>
-                <p id="aria2Help" data-i18n="aria2.help">Sends individual images, not ZIPs. Accepted tasks are handed off, not confirmed downloads. Blank keeps the session secret; re-enter it after restarting the browser.</p>
+                <label class="aria2-clear"><input id="aria2ClearSecret" type="checkbox"><span data-i18n="aria2.clearSecret">Clear secret</span></label>
                 <button type="button" class="btn btn-ghost" id="aria2TestBtn" data-i18n="aria2.test">Save &amp; test</button>
                 <p id="aria2Status" role="status" aria-live="polite"></p>
             </details>

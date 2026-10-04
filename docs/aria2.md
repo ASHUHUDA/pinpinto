@@ -1,6 +1,6 @@
 # 使用 aria2 下载器
 
-本指南面向 PinPinto 1.6.0 及以后版本的用户。功能适用于 Chrome、Edge 和 Firefox，可连接本机开放 aria2 JSON-RPC 的下载器，例如 aria2c、Motrix。仅使用 aria2 内核但没有开放 RPC 的软件不一定兼容。
+本指南面向 PinPinto 1.7.0 及以后版本的用户。功能适用于 Chrome、Edge 和 Firefox，可连接本机开放 aria2 JSON-RPC 的下载器，例如 aria2c、Motrix。仅使用 aria2 内核但没有开放 RPC 的软件不一定兼容。
 
 ## 功能边界
 
@@ -28,10 +28,16 @@
 1. 打开 PinPinto 弹窗或侧边栏，展开 **aria2 连接设置**。
 2. 填写本机 HTTP(S) JSON-RPC 地址，例如 `http://127.0.0.1:6800/jsonrpc` 或 `http://localhost:16800/jsonrpc`。
 3. 将 RPC 密钥填入独立密码框。如果下载器没有设置密钥，可留空；不接受包含用户名或密钥的 URL。
-4. 点击 **保存并测试连接**，按浏览器提示授权这个本机主机。
+4. 点击 **保存并测试**，按浏览器提示授权这个本机主机。
 5. 成功时应看到 aria2 版本号。失败时检查下载器是否运行、RPC 是否启用、端口和密钥是否对应。
 
-地址保存在本机。密钥只保存在浏览器会话存储，不进入云同步、任务快照、日志或页面消息。关闭弹窗不会丢失会话密钥，**重启浏览器后需要重新输入**。密码框留空会保留现有会话密钥；勾选“清除已保存的密钥”并保存可删除它。配置保存后即使测试失败也会保留，以便修正设置。
+地址和密钥默认保存在本机，**重启浏览器后仍保留**。密钥使用扩展自身的 IndexedDB，不进入云同步、`storage.local`、任务快照、日志或内容脚本消息；密码框不回填已保存的值。它没有加密，不能防止能读取浏览器配置的程序或本机用户取得密钥。
+
+密码框留空不改密钥，更换 RPC 地址也会沿用现有密钥；需要更换时输入新值。勾选“清除密钥”并保存可删除已保存的密钥。下载器没启动或连接测试失败时，输入的配置仍会保留，界面会明确显示“配置已保存，连接失败”；存储失败则显示“未确认保存”，保留输入以便重试。
+
+密钥旁的 ⓘ 图标沿用自动批次设置的提示样式，悬停或键盘聚焦可查看简短说明。连接结果和错误仍直接显示，不藏进提示里。
+
+1.6.x 的密钥只存浏览器会话。如果升级后旧值仍存在，会在读取时迁移到长期存储；扩展更新或重启浏览器可能已经清掉旧值，此时需重填一次。卸载扩展或清除其存储也会删除长期密钥。
 
 只支持 `localhost` 和 `127.0.0.1`，不支持 NAS、远程地址、WebSocket、带 query/fragment 的地址。浏览器主机权限不能限定端口；实际 RPC 请求仍严格使用所填本机端点，禁止重定向。
 
@@ -56,7 +62,7 @@
 ## 开发验证
 
 ```powershell
-corepack.cmd pnpm exec node --test scripts/tests/aria2-client.test.mjs scripts/tests/aria2-config.test.mjs scripts/tests/aria2-download.test.mjs scripts/tests/background-download-lifecycle.test.mjs
+corepack.cmd pnpm exec node --test scripts/tests/aria2-client.test.mjs scripts/tests/aria2-secret-store.test.mjs scripts/tests/aria2-config.test.mjs scripts/tests/aria2-download.test.mjs scripts/tests/background-download-lifecycle.test.mjs
 corepack.cmd pnpm run verify
 corepack.cmd pnpm run test:e2e
 corepack.cmd pnpm run build:browsers
@@ -64,11 +70,13 @@ corepack.cmd pnpm run audit:production
 git diff --check
 ```
 
-E2E 使用本机可控 RPC 服务，覆盖按钮操作、单图、手动、自动窗口、明确拒绝、断线及 Chromium 底层 POST 重发，不需要真实下载器或密钥。真实 Motrix/aria2c 的端口、密钥、下载目录和实际图片下载需按以上步骤自行验证；Firefox 构建验证不等于 Firefox 运行时实测。
+E2E 使用本机可控 RPC 服务，覆盖按钮操作、单图、手动、自动窗口、明确拒绝、断线、Chromium 底层 POST 重发，以及真实浏览器重启后的密钥保留、清除、页面端隔离和中英文提示浮层，不需要真实下载器或密钥。真实 Motrix/aria2c 的端口、密钥、下载目录和实际图片下载需按以上步骤自行验证；Firefox 构建验证不等于 Firefox 运行时实测。
 
 ## 来源
 
 - [aria2 官方 RPC 手册](https://aria2.github.io/manual/en/html/aria2c.html#rpc-interface)：方法、授权、GID 与任务选项。
 - [Motrix 官方 RPC 说明](https://motrix.app/zh/blog/motrix-v1-4-x-release-note#rpc-authorization-secret-token)：浏览器接入和官方端口示例。
 - [Chrome 扩展跨域请求](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests)：后台请求与主机权限边界。
+- [Chrome 扩展存储](https://developer.chrome.com/docs/extensions/develop/concepts/storage-and-cookies)：扩展自身 IndexedDB 的持久性、service worker 可用性，以及内容脚本使用页面存储的边界。
+- [MDN 扩展存储](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/storage)：本机、会话和同步存储的区别，以及未加密存储的风险。
 - [MDN 浏览器兼容数据](https://github.com/mdn/browser-compat-data/blob/main/webextensions/manifest/optional_host_permissions.json)：Firefox 的专用可选主机权限键从 128 开始支持；PinPinto 为 Firefox 115 使用 `optional_permissions`。

@@ -14,7 +14,7 @@ A Pinterest image collection and batch-download extension for Chrome, Edge, and 
 - Stop auto-download after the current batch or cancel it immediately
 - Control a locked target tab from either the popup or side panel
 
-See the [aria2 / Motrix guide (Chinese)](docs/aria2.md) for RPC setup, session-only secrets, connection tests, and failure handling.
+See the [aria2 / Motrix guide (Chinese)](docs/aria2.md) for RPC setup, connection tests, and failure handling. RPC secrets persist on this device by default, without encryption or cloud sync. Hover or focus the ⓘ icon beside the secret field for help.
 
 ## Quick Start
 1. Install dependencies

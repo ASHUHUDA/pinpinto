@@ -44,7 +44,7 @@ What each gate proves:
 - `audit:dependencies`: installed production versions against npm bulk advisories and OSV.
 - `build:browsers`: Chrome ZIP and Firefox XPI generation.
 - `audit:production`: manifest/version/browser permissions and absence of E2E-only code in both production packages.
-- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, dynamic ARIA progress, and local aria2 RPC handoff (single/manual/auto, rejection, ambiguity, and transport replay) in Chromium.
+- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, dynamic ARIA progress, and local aria2 RPC handoff (single/manual/auto, rejection, ambiguity, and transport replay), secret persistence across a real browser restart, content-script isolation, clear behavior, and localized icon tooltips in Chromium.
 
 ## Release Publication
 
@@ -57,7 +57,7 @@ The command fetches `origin/main` and tags, refuses a behind or diverged branch,
 To publish the version already updated during feature delivery without incrementing it again:
 
 ```powershell
-corepack.cmd pnpm run release:push -- --version=1.6.0
+corepack.cmd pnpm run release:push -- --version=1.7.0
 ```
 
 `--skip-e2e` is reserved for an explicit manual-test handoff. It skips only the local Playwright run; the tag-triggered GitHub Release workflow still runs deterministic E2E and will not create the Release until that gate passes.
@@ -77,7 +77,7 @@ Open the report with:
 corepack.cmd pnpm exec playwright show-report
 ```
 
-Production packages are written to `artifacts/`. The E2E extension build is written to `.e2e-dist/`. These directories are generated and ignored by Git.
+Production packages are written to `artifacts/`. The E2E extension build is written to `.e2e-dist/`. These directories are generated and ignored by Git. `.agents/` contains local collaboration memory and must remain untracked; removing it from Git does not delete local files or erase earlier commits.
 
 If `audit:dependencies` reports that both advisory services are unavailable, retry after network or registry access is restored. A single service failure is reported as a warning while the independent service remains authoritative for that run.
 

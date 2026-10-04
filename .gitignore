@@ -22,7 +22,7 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
-.agent/
+.agents/
 
 # local session and browser profile data
 .omx/

@@ -1,8 +1,11 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadTsModule } from './helpers/load-ts-module.mjs';
+import { installIndexedDb } from './helpers/indexeddb.mjs';
+import { createGlobalCleanup } from './helpers/global-cleanup.mjs';
 import { createHost, createStorage, installChrome, waitFor, completedBroadcast, persistedSnapshot, activeWindow, restoreBatchCoordinatorGlobals } from './helpers/batch-coordinator-harness.mjs';
 afterEach(restoreBatchCoordinatorGlobals);
+afterEach(createGlobalCleanup(['indexedDB']));
 const image = (id) => ({ id, url: `https://i.pinimg.com/originals/${id}.jpg` });
 
 async function harness(options = {}) {
@@ -33,6 +36,7 @@ test('manual aria2 handoff deduplicates and never invokes browser/Blob or clears
 });
 
 test('explicit RPC rejection is skipped in an automatic window and does not block the next image', async () => {
+  installIndexedDb();
   const h = await harness();
   delete h.host.createAria2Client;
   globalThis.chrome.permissions = { async contains() { return true; } };

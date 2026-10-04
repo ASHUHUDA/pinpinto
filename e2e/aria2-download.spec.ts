@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
-import type { BrowserContext, Page } from '@playwright/test';
+import { chromium, type BrowserContext, type Page } from '@playwright/test';
+import path from 'node:path';
 import { test as base, expect } from './fixtures/extension';
 import { createPinterestSearchFixture, fixtureImageSvg } from './fixtures/pinterest-search';
 import { captureDownloadCheckpoint, listDownloadsSince } from './fixtures/extension-downloads';
@@ -120,6 +121,88 @@ test('aria2 settings, real card clicks and manual download button hand off witho
     await expect(sidebar.locator('#batchDownloadMethod')).toHaveValue('aria2');
     await expect(sidebar.locator('#singleImageDownloadMethod')).toHaveValue('aria2');
     await expect(sidebar.locator('#aria2Endpoint')).toHaveValue(rpc.endpoint);
+});
+
+test('RPC secret survives a real browser restart, stays private and can be cleared without re-entering it', async ({ context, openExtensionPage, extensionId, downloadsDir, rpc }) => {
+    const pinterest = await openSearch(context);
+    const control = await openExtensionPage('popup.html');
+    await pinterest.bringToFront();
+    await control.reload({ waitUntil: 'domcontentloaded' });
+    await configure(control, rpc);
+    const storage = await control.evaluate(async () => ({
+        local: await chrome.storage.local.get(null),
+        sync: await chrome.storage.sync.get(null),
+        session: await chrome.storage.session.get(null),
+        config: await chrome.runtime.sendMessage({ action: 'getAria2Config' })
+    }));
+    expect(storage.config).toEqual({ success: true, endpoint: rpc.endpoint, hasSecret: true });
+    expect(JSON.stringify(storage)).not.toContain('fixture-only-secret');
+    const isolation = await control.evaluate(async () => {
+        const tabs = await chrome.tabs.query({ url: 'https://www.pinterest.com/*' });
+        return (await chrome.scripting.executeScript({ target: { tabId: tabs[0].id! }, func: async () => ({
+            config: await chrome.runtime.sendMessage({ action: 'getAria2Config' }),
+            databaseNames: (await indexedDB.databases()).map((db) => db.name)
+        }) }))[0].result;
+    });
+    expect(isolation.config.success).toBe(false);
+    expect(isolation.databaseNames).not.toContain('pinpinto-aria2');
+
+    await context.close();
+    const extensionPath = path.resolve('.e2e-dist');
+    const restarted = await chromium.launchPersistentContext(path.join(path.dirname(downloadsDir), 'profile'), {
+        headless: false,
+        args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`]
+    });
+    try {
+        const worker = restarted.serviceWorkers()[0] ?? await restarted.waitForEvent('serviceworker');
+        expect(new URL(worker.url()).host).toBe(extensionId);
+        await openSearch(restarted);
+        const reopened = await restarted.newPage();
+        await reopened.goto(`chrome-extension://${extensionId}/sidebar.html`);
+        await expect(reopened.locator('#aria2Endpoint')).toHaveValue(rpc.endpoint);
+        await reopened.locator('.aria2-config summary').click();
+        await expect(reopened.locator('#aria2Status')).toContainText(/device|本机/);
+        await expect(reopened.locator('#aria2Secret')).toHaveValue('');
+        await reopened.locator('#aria2TestBtn').click();
+        await expect(reopened.locator('#aria2Status')).toContainText('1.37.0');
+        await reopened.locator('#aria2ClearSecret').check();
+        await reopened.locator('#aria2TestBtn').click();
+        await expect(reopened.locator('#aria2Status')).toContainText(/Settings saved\. Connection failed|配置已保存，连接失败/);
+        await expect(reopened.locator('#aria2ClearSecret')).not.toBeChecked();
+        const cleared = await reopened.evaluate(async () => chrome.runtime.sendMessage({ action: 'getAria2Config' }));
+        expect(cleared.hasSecret).toBe(false);
+        await reopened.reload({ waitUntil: 'domcontentloaded' });
+        const stillCleared = await reopened.evaluate(async () => chrome.runtime.sendMessage({ action: 'getAria2Config' }));
+        expect(stillCleared.hasSecret).toBe(false);
+    } finally {
+        await restarted.close();
+    }
+});
+
+test('failed secret storage keeps the input for retry and does not replace the saved credential', async ({ context, openExtensionPage, rpc }) => {
+    const pinterest = await openSearch(context);
+    const control = await openExtensionPage('popup.html');
+    await pinterest.bringToFront();
+    await control.reload({ waitUntil: 'domcontentloaded' });
+    await configure(control, rpc);
+    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    await worker.evaluate(() => {
+        const original = indexedDB.open.bind(indexedDB);
+        Object.defineProperty(indexedDB, 'open', { configurable: true, value: () => {
+            Object.defineProperty(indexedDB, 'open', { configurable: true, value: original });
+            const request = {} as IDBOpenDBRequest;
+            queueMicrotask(() => request.onerror?.call(request, new Event('error')));
+            return request;
+        } });
+    });
+    await control.locator('#aria2Secret').fill('fixture-replacement-secret');
+    await control.locator('#aria2TestBtn').click();
+    await expect(control.locator('#aria2Status')).toContainText(/Save not confirmed|未确认保存/);
+    await expect(control.locator('#aria2Secret')).toHaveValue('fixture-replacement-secret');
+    await expect(control.locator('#aria2TestBtn')).toBeEnabled();
+    await control.locator('#aria2Secret').fill('');
+    await control.locator('#aria2TestBtn').click();
+    await expect(control.locator('#aria2Status')).toContainText('1.37.0');
 });
 
 test('lost background reply keeps an aria2 card uncertain and disables accidental resubmission', async ({ context, openExtensionPage, rpc }) => {

@@ -17,6 +17,7 @@
 - 默认不改：`dist/`、`artifacts/`、`.e2e-dist/`、`playwright-report/`、`test-results/` 等生成物。
 - 禁止无确认操作：`git push`、`git reset --hard`、远端发布、生产配置/权限扩大、不可逆删除或迁移。
 - 工作区已有未提交改动时，不要 reset、覆盖或大范围格式化；先判断是否与本次任务冲突。
+- `.agents/` 是仅本机的协作记忆目录，必须保持忽略，不得重新加入 Git 或发布包；取消跟踪时保留本机文件，不重写 Git 历史。
 
 ## 目录地图
 
@@ -24,6 +25,7 @@
 - `src/background/batch-coordinator.ts`：后台批量任务生命周期、取消、下载结算和自动批次 cursor 推进。
 - `src/background/batch-download.ts` / `batch-zip-adapter.ts`：图片抓取、ZIP 输出执行适配与浏览器补救下载。
 - `src/background/aria2-client.ts` / `aria2-config.ts` / `aria2-batch-window.ts`：本机 RPC、可信设置入口、逐张交接与持久化窗口状态。
+- `src/background/aria2-secret-store.ts`：扩展自身 IndexedDB 中的长期密钥保存、旧会话迁移与清除。
 - `src/shared/aria2-controls.ts`：弹窗和侧边栏共用的 aria2 设置与连接测试。
 - `src/content.ts`：页面图片扫描、选择覆盖层和内容脚本消息入口。
 - `src/content/auto-batch-session.ts`：自动滚动、批次窗口发送、暂停/恢复握手。
@@ -46,7 +48,8 @@
 - `resumeAutoBatchSession`：页面确认压缩后，后台推进 cursor 并恢复下一轮滚动。
 - `finishAutoBatchSession`：页面滚动耗尽且没有剩余窗口时结束自动任务。
 - 自动批次必须保持单活动窗口、cursor 对齐；浏览器模式下载终态先于页面压缩，aria2 模式以明确交接/明确跳过先于页面压缩。
-- aria2 密钥只放 `storage.session`，不得进入 sync、local、任务快照或页面消息；端点只允许 localhost/127.0.0.1，用可选权限授权，禁止重定向和自动重放。每次提交指定唯一 GID 防浏览器底层 POST 重发。
+- 用户于 2026-10-05 确认 aria2 密钥默认长期保存：只存扩展自身 IndexedDB（不加密），不得进入 `storage.sync/local`、任务快照、日志或内容脚本消息；设置消息只允许 popup/sidebar，读取只返回是否已保存，不回填密钥。留空和换地址沿用密钥，显式清除阻止旧会话密钥复活；存储失败不得静默改为无密钥请求。
+- aria2 端点只允许 localhost/127.0.0.1，用可选权限授权，禁止重定向和自动重放。每次提交指定唯一 GID 防浏览器底层 POST 重发。
 
 ## 版本策略
 

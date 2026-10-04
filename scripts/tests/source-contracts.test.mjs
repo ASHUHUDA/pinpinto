@@ -273,6 +273,25 @@ test('content auto-selection is scoped to future eligible records and survives o
   assert.match(contentSource, /this\.autoBatchSession\.finish\(request\.jobId, \{\s*continueAutoScroll: request\.continueAutoScroll === true/);
 });
 
+test('aria2 help shares accessible icon markup and secrets use background-only origin storage', async () => {
+  for (const page of ['popup.html', 'sidebar.html']) {
+    const html = await readWorkspaceFile(page);
+    assert.match(html, /button[^>]+id="aria2InfoButton"[^>]+aria-describedby="aria2Help"/);
+    assert.match(html, /id="aria2Help"[^>]+class="settings-tooltip"[^>]+role="tooltip"/);
+    assert.doesNotMatch(html, /<p id="aria2Help"|RPC secret \(session only\)/);
+  }
+  const store = await readWorkspaceFile('src/background/aria2-secret-store.ts');
+  assert.match(store, /indexedDB\.open\(/);
+  assert.doesNotMatch(store, /chrome\.storage\.(?:local|sync)\./);
+  for (const entry of ['src/content.ts', 'src/popup.ts', 'src/sidebar.ts', 'src/shared/aria2-controls.ts']) {
+    assert.doesNotMatch(await readWorkspaceFile(entry), /from ['"][^'"]*aria2-secret-store/);
+  }
+});
+
+test('local project memory is ignored instead of included in releases', async () => {
+  assert.match(await readWorkspaceFile('.gitignore'), /^\.agents\/$/m);
+});
+
 test('main code files remain below the 700-line AGENTS threshold', async () => {
   const lineBudgets = [
     ['src/background.ts', 700],

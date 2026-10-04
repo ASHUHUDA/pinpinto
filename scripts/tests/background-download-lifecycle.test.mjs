@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadTsModule } from './helpers/load-ts-module.mjs';
+import { installIndexedDb } from './helpers/indexeddb.mjs';
 
 const OFFSCREEN_TARGET = 'pinpinto-blob-offscreen';
 
@@ -189,7 +190,9 @@ function request(imageId, overrides = {}) {
 
 test('aria2 single message and right-click menu both honor the persisted method without browser or Blob downloads', async () => {
   const originalFetch = globalThis.fetch;
+  const originalIndexedDb = globalThis.indexedDB;
   try {
+    installIndexedDb();
     const harness = installBackgroundChrome({ sessionValues: { singleImageDownloadMethod: 'aria2' } });
     globalThis.chrome.permissions = { async contains() { return true; } };
     const calls = [];
@@ -209,7 +212,11 @@ test('aria2 single message and right-click menu both honor the persisted method 
     assert.equal(calls[1].params[0][0], 'https://i.pinimg.com/originals/context.jpg');
     assert.deepEqual(harness.downloadCalls, []);
     assert.equal(harness.blobCalls.some((call) => call.operation === 'start'), false);
-  } finally { globalThis.fetch = originalFetch; }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalIndexedDb === undefined) delete globalThis.indexedDB;
+    else globalThis.indexedDB = originalIndexedDb;
+  }
 });
 
 test('browser single uses a file Blob, remains pending, and releases its lease on terminal settlement', async () => {

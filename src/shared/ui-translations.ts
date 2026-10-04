@@ -8,20 +8,22 @@ const ARIA2_TRANSLATIONS = {
         'aria2.settings': 'aria2 connection settings',
         'aria2.endpoint': 'Local RPC URL',
         'aria2.motrix': 'Use Motrix port',
-        'aria2.secret': 'RPC secret (session only)',
-        'aria2.clearSecret': 'Clear saved secret',
+        'aria2.secret': 'RPC secret',
+        'aria2.info': 'aria2 information',
+        'aria2.clearSecret': 'Clear secret',
         'aria2.test': 'Save & test',
-        'aria2.help': 'Sends individual images, not ZIPs. Accepted tasks are handed off, not confirmed downloads. Blank keeps the session secret; re-enter it after restarting the browser.'
+        'aria2.help': 'Sends individual images, not ZIPs. Submission does not mean download completion. The secret stays on this device, unencrypted and unsynced, across browser restarts. Blank keeps it; select Clear secret and save to remove it.'
     },
     zh: {
-        'aria2.batchMethod': '批量 / 自动下载方式',
+        'aria2.batchMethod': '批量 / 自动下载',
         'aria2.settings': 'aria2 连接设置',
         'aria2.endpoint': '本机 RPC 地址',
         'aria2.motrix': '使用 Motrix 端口',
-        'aria2.secret': 'RPC 密钥（仅本次会话）',
-        'aria2.clearSecret': '清除已保存的密钥',
-        'aria2.test': '保存并测试连接',
-        'aria2.help': '逐张交给下载器，不生成 ZIP；接收成功不代表下载完成。密钥留空保留，重启浏览器后需重新输入。'
+        'aria2.secret': 'RPC 密钥',
+        'aria2.info': 'aria2 说明',
+        'aria2.clearSecret': '清除密钥',
+        'aria2.test': '保存并测试',
+        'aria2.help': '逐张提交，不生成 ZIP。提交成功不代表下载完成。密钥仅存本机，不加密、不云同步，重启后保留。留空不改，勾选清除后保存。'
     }
 };
 

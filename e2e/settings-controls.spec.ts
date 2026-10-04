@@ -100,6 +100,43 @@ test('batch tooltip follows hover and focus without covering batch inputs', asyn
   }
 });
 
+test('aria2 help uses a localized icon tooltip without covering connection controls', async ({ context, openExtensionPage, assetServer }, testInfo) => {
+  const pinterestPage = await openPinterestFixture(context, assetServer.baseUrl);
+  for (const { pagePath } of surfaces) {
+    const page = await openConnectedExtensionPage(openExtensionPage, pinterestPage, pagePath);
+    for (const language of ['en', 'zh'] as const) {
+      await seedSettings(page, { language });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.setViewportSize({ width: 360, height: 900 });
+      await page.locator('.aria2-config summary').click();
+      const info = page.getByRole('button', { name: language === 'en' ? 'aria2 information' : 'aria2 说明', exact: true });
+      const tooltip = page.locator('#aria2Help');
+      const controls = ['#aria2Endpoint', '#aria2Secret', '#aria2ClearSecret', '#aria2TestBtn'].map((selector) => page.locator(selector));
+      await expect(info).toHaveAttribute('aria-describedby', 'aria2Help');
+      await expect(tooltip).toHaveAttribute('role', 'tooltip');
+      await expect(tooltip).toContainText(language === 'en' ? 'unencrypted and unsynced' : '不加密、不云同步');
+      await expect(tooltip).toBeHidden();
+      await info.hover();
+      await expect(tooltip).toBeVisible();
+      await expectNoOverlap(tooltip, controls);
+      const box = await tooltip.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+      await expectTooltipInView(tooltip);
+      await page.mouse.move(1, 1);
+      await expect(tooltip).toBeHidden();
+      await info.focus();
+      await expect(tooltip).toBeVisible();
+      await expectNoOverlap(tooltip, controls);
+      await expectTooltipInView(tooltip);
+      await page.screenshot({ path: testInfo.outputPath(`aria2-help-${pagePath}-${language}.png`), fullPage: true });
+      await info.evaluate((element) => element.blur());
+      await expect(tooltip).toBeHidden();
+    }
+    await page.close();
+  }
+});
+
 async function openPinterestFixture(context: BrowserContext, imageBaseUrl: string): Promise<Page> {
   await context.route('https://www.pinterest.com/search/pins/**', (route) => route.fulfill({
     status: 200,
@@ -178,6 +215,21 @@ async function expectNoOverlap(tooltip: Locator, controls: Locator[]): Promise<v
     expect(controlBox).not.toBeNull();
     expect(rectanglesOverlap(tooltipBox!, controlBox!)).toBe(false);
   }
+}
+
+async function expectTooltipInView(tooltip: Locator): Promise<void> {
+  await expect.poll(() => tooltip.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const clippedBy: string[] = [];
+    if (rect.top < 0 || rect.bottom > window.innerHeight) clippedBy.push('viewport');
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent);
+      const box = parent.getBoundingClientRect();
+      if (['hidden', 'clip', 'auto', 'scroll'].includes(style.overflowY)
+        && (rect.top < box.top || rect.bottom > box.bottom)) clippedBy.push(parent.id || parent.className);
+    }
+    return clippedBy;
+  })).toEqual([]);
 }
 
 function rectanglesOverlap(left: BoundingBox, right: BoundingBox): boolean {

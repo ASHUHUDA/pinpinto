@@ -33,7 +33,8 @@ export async function bindAria2Controls(getLanguage: () => SupportedLanguage): P
     });
     const config = await chrome.runtime.sendMessage({ action: 'getAria2Config' });
     endpoint.value = config?.endpoint ?? DEFAULT_ARIA2_ENDPOINT;
-    if (config?.hasSecret) report('A secret is saved for this browser session. Leave blank to keep it.', '本次浏览器会话已保存密钥；留空保留。');
+    if (!config?.success) report('Could not load RPC settings. Try again.', '读取 RPC 设置失败，请重试。');
+    else if (config.hasSecret) report('Secret saved on this device. Blank keeps it.', '密钥已保存在本机；留空不改。');
     document.getElementById('aria2MotrixBtn')?.addEventListener('click', () => { endpoint.value = MOTRIX_ARIA2_ENDPOINT; });
     button.addEventListener('click', async () => {
         button.disabled = true;
@@ -45,14 +46,17 @@ export async function bindAria2Controls(getLanguage: () => SupportedLanguage): P
                 report('Local access was not granted.', '未授予本机访问权限。');
                 return;
             }
-            report('Testing local aria2 RPC…', '正在测试本机 aria2 RPC…');
+            report('Testing connection…', '正在测试连接…');
             const result = await chrome.runtime.sendMessage({
                 action: 'saveAndTestAria2', endpoint: url, secret: secret.value, clearSecret: clearSecret.checked
             });
-            secret.value = '';
-            clearSecret.checked = false;
-            if (result?.success) report(`Connected to aria2 ${result.version}. Configuration saved.`, `已连接 aria2 ${result.version}，配置已保存。`);
-            else report(`Connection failed: ${result?.error ?? 'Check RPC settings.'}`, `连接失败：${result?.error ?? '请检查 RPC 设置。'}`);
+            if (result?.success || result?.configSaved) {
+                secret.value = '';
+                clearSecret.checked = false;
+            }
+            if (result?.success) report(`Connected to aria2 ${result.version}. Settings saved.`, `已连接 aria2 ${result.version}，配置已保存。`);
+            else if (result?.configSaved) report(`Settings saved. Connection failed: ${result.error}`, `配置已保存，连接失败：${result.error}`);
+            else report(`Save not confirmed: ${result?.error ?? 'Check RPC settings.'}`, `未确认保存：${result?.error ?? '请检查 RPC 设置。'}`);
         } catch {
             report('Use an HTTP(S) localhost/127.0.0.1 RPC URL. Check the downloader and permission.', '请使用 HTTP(S) localhost/127.0.0.1 RPC 地址，并检查下载器与访问权限。');
         } finally {
