@@ -63,7 +63,7 @@ corepack.cmd pnpm run audit:dependencies
 # install Chromium before the first end-to-end run
 corepack.cmd pnpm exec playwright install chromium
 
-# run deterministic extension end-to-end tests
+# full deterministic E2E before release (not the default for a single bug)
 corepack.cmd pnpm run test:e2e
 
 # release preflight and local release commands
@@ -73,7 +73,9 @@ corepack.cmd pnpm run release:force
 corepack.cmd pnpm run release:push
 ```
 
-See the [testing guide](docs/testing.md) for Playwright setup, complete quality gates, failure evidence, release workflow, and the read-only live-smoke boundary.
+Browser review scope: full review before a version release; for a specific bug, review only that feature, not the entire feature set. Daily development does not start browser review by default; use focused checks only when necessary.
+
+See the [testing guide](docs/testing.md) for focused E2E commands, Playwright setup, complete release gates, failure evidence, release workflow, and the read-only live-smoke boundary.
 
 ## License
 MIT (see [LICENSE](LICENSE))

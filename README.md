@@ -63,7 +63,7 @@ corepack.cmd pnpm run audit:dependencies
 # 首次端到端测试前安装 Chromium
 corepack.cmd pnpm exec playwright install chromium
 
-# 确定性扩展端到端测试
+# 发布前全量确定性扩展端到端测试（非单项 bug 的默认验证）
 corepack.cmd pnpm run test:e2e
 
 # 发布预检与本地发布命令
@@ -73,7 +73,9 @@ corepack.cmd pnpm run release:force
 corepack.cmd pnpm run release:push
 ```
 
-首次安装 Playwright、完整质量门禁、失败证据位置、发布流程及只读线上 smoke 边界见 [测试指南](docs/testing.md)。
+浏览器审查范围：版本发布前全量审查；单项 bug 仅审查该功能，不扩展到全部功能。日常开发默认不启动浏览器审查，仅在必要时做定向验证。
+
+定向 E2E 命令、首次安装 Playwright、完整发布门禁、失败证据位置、发布流程及只读线上 smoke 边界见 [测试指南](docs/testing.md)。
 
 ## 许可证
 MIT（见 [LICENSE](LICENSE)）

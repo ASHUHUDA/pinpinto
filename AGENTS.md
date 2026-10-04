@@ -62,6 +62,15 @@
 
 优先使用 Windows PowerShell，并通过仓库固定的 Corepack/pnpm 版本运行命令。
 
+### 浏览器审查范围
+
+- 版本发布前进行全量浏览器审查，覆盖全部功能与核心交互，并执行下方完整发布门禁；优先复用完整 E2E 证据，仅对自动化无法验证的部分补充真实浏览器检查，避免重复审查。
+- 单项 bug 只允许对该功能进行定向浏览器审查，覆盖复现路径、修复结果和该功能内的回归场景；不得扩大到无关功能或运行完整 E2E。
+- 日常开发默认不启动浏览器审查；类型检查、Node 行为/契约测试和构建能证明结果时，不额外打开浏览器。确需验证真实 DOM、浏览器 API、下载落盘或视觉交互时，仅审查本次功能。
+- 启动前说明触发原因、目标功能和用例范围；用具体 spec 和必要的 `--grep` 限定范围，先通过 `--list` 确认匹配。详细步骤见 `docs/testing.md`。
+
+### 日常最小验证
+
 ```powershell
 corepack.cmd pnpm install --frozen-lockfile
 corepack.cmd pnpm exec node --test scripts/tests/auto-batch-session.test.mjs scripts/tests/batch-coordinator.test.mjs scripts/tests/download-settings.test.mjs scripts/tests/source-contracts.test.mjs
@@ -69,14 +78,19 @@ corepack.cmd pnpm run verify
 git diff --check
 ```
 
-触及 E2E 选择器、页面覆盖层、下载落盘或 Pinterest 分类时，再运行：
+确需浏览器证据时，按目标功能运行定向用例，不因触及 E2E 选择器、页面覆盖层、下载落盘或 Pinterest 分类就直接启动全量审查。示例（仅验证批次数量提示）：
 
 ```powershell
-corepack.cmd pnpm exec playwright install chromium
-corepack.cmd pnpm run test:e2e
+corepack.cmd pnpm exec playwright test e2e/settings-controls.spec.ts --grep "batch tooltip" --list
+corepack.cmd pnpm exec node scripts/build-e2e.mjs
+corepack.cmd pnpm exec playwright test e2e/settings-controls.spec.ts --grep "batch tooltip"
 ```
 
-发布前完整门禁按 `docs/testing.md` 执行：
+Chromium 仅在首次使用或缓存缺失时安装，见 `docs/testing.md`。
+
+### 发布前完整门禁
+
+按 `docs/testing.md` 执行：
 
 ```powershell
 corepack.cmd pnpm run verify
@@ -87,7 +101,7 @@ corepack.cmd pnpm run test:e2e
 git diff --check
 ```
 
-正式发布统一使用 `corepack.cmd pnpm run release:push -- --version=X.Y.Z` 发布功能交付时已选定的版本。若未传版本，该命令会默认递增补丁版本；推送 `main` 与 tag 前仍须确认。只有用户明确保留真实交互验证时才可传 `--skip-e2e`，远端 tag workflow 仍必须通过 E2E 后才能创建 Release。
+正式发布统一使用 `corepack.cmd pnpm run release:push -- --version=X.Y.Z` 发布功能交付时已选定的版本。若未传版本，该命令会默认递增补丁版本；推送 `main` 与 tag 前仍须确认。只有用户明确保留真实交互验证时才可传 `--skip-e2e`；该参数仅跳过本地 E2E，不豁免发布前全量浏览器审查，远端 tag workflow 仍必须通过完整 E2E 后才能创建 Release。
 
 ## 代码与文档约束
 

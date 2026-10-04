@@ -1,6 +1,35 @@
 # PinPinto Testing Guide
 
-This guide is for a first local verification run on Windows. It separates deterministic release gates from the optional live Pinterest selector smoke.
+This guide covers local verification and release gates on Windows. Daily development uses the smallest effective checks; a version release requires full browser review.
+
+## Browser Review Scope
+
+Project policy confirmed on 2026-10-05:
+
+| Situation | Required scope |
+| --- | --- |
+| Before a version release | Review all features and core interactions; run the complete release gates below. Reuse full deterministic E2E evidence, adding real-browser checks only for behavior the suite cannot prove. |
+| A specific bug | If browser evidence is necessary, review only that feature: reproduction, the fix, and regression cases within the feature. Do not review unrelated features or run the full E2E suite. |
+| Daily development | No browser review by default. Use type checks, Node behavior/contract tests, and builds where sufficient; run focused browser checks only when browser-specific evidence is necessary. |
+
+Before starting a browser review, state the trigger, target feature, and case scope. Changes to selectors, overlays, downloads, or Pinterest classification do not automatically justify a full review. Optional live Pinterest, aria2, and external-downloader smokes below follow the same scope rules; they are not routine development gates.
+
+## Focused Bug Verification
+
+Start with the relevant Node behavior/contract tests. Use browser checks only when those checks cannot establish the required DOM, browser API, downloaded-byte, or visual-interaction evidence.
+
+Select a specific spec and, if it includes other features, narrow it with `--grep`. For example, a batch-count tooltip bug should run only its tooltip case:
+
+```powershell
+# List matching cases without launching a browser; confirm the scope first.
+corepack.cmd pnpm exec playwright test e2e/settings-controls.spec.ts --grep "batch tooltip" --list
+
+# Build the test extension, then run only the selected case.
+corepack.cmd pnpm exec node scripts/build-e2e.mjs
+corepack.cmd pnpm exec playwright test e2e/settings-controls.spec.ts --grep "batch tooltip"
+```
+
+Replace the spec and title filter with the affected feature's cases. If no case matches, correct the filter or add a focused regression case; do not fall back to an unfiltered full-suite run. Follow the setup below only if dependencies or Chromium are missing. Record the selected cases and result; failures have evidence in the locations below.
 
 ## Prerequisites
 
@@ -25,9 +54,9 @@ corepack.cmd pnpm exec playwright install chromium
 
 Keep `PLAYWRIGHT_BROWSERS_PATH` set in the same PowerShell session when running E2E. Omitting it is also valid; Playwright then uses its default cache.
 
-## Deterministic Gates
+## Complete Deterministic Release Gates
 
-Run these commands in order:
+Before a version release, run these commands in order. This is not the default checklist for an individual bug fix:
 
 ```powershell
 corepack.cmd pnpm run verify
@@ -60,7 +89,7 @@ To publish the version already updated during feature delivery without increment
 corepack.cmd pnpm run release:push -- --version=1.7.0
 ```
 
-`--skip-e2e` is reserved for an explicit manual-test handoff. It skips only the local Playwright run; the tag-triggered GitHub Release workflow still runs deterministic E2E and will not create the Release until that gate passes.
+`--skip-e2e` is reserved for an explicit manual-test handoff. It skips only the local Playwright run, not the requirement for full browser review before release; the tag-triggered GitHub Release workflow still runs the complete deterministic E2E suite and will not create the Release until that gate passes. Do not use this release option as a shortcut for focused bug verification.
 
 If an atomic push fails, rerun the same command. The script recognizes a local tag pointing at `HEAD` with no matching remote tag and retries the same version instead of incrementing again.
 
