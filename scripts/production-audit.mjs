@@ -27,7 +27,10 @@ for (const artifact of artifacts) {
   assert.ok(manifestEntry, `${artifact.browser} artifact must contain manifest.json`);
   const manifest = JSON.parse(await manifestEntry.async('string'));
   assert.equal(manifest.version, version, `${artifact.browser} version must match package.json`);
-  assert.ok(!manifest.host_permissions.includes('http://127.0.0.1/*'), `${artifact.browser} must not contain E2E host access`);
+  const aria2Origins = ['http://127.0.0.1/*', 'http://localhost/*', 'https://127.0.0.1/*', 'https://localhost/*'];
+  assert.ok(!aria2Origins.some((origin) => manifest.host_permissions.includes(origin)), `${artifact.browser} must not require local RPC/E2E host access`);
+  const optionalOrigins = artifact.browser === 'chrome' ? manifest.optional_host_permissions : manifest.optional_permissions;
+  assert.deepEqual(optionalOrigins, aria2Origins, `${artifact.browser} aria2 access must remain optional and loopback-only`);
 
   if (artifact.browser === 'chrome') {
     assert.ok(manifest.permissions.includes('offscreen'), 'Chrome must include offscreen permission');

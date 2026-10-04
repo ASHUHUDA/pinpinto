@@ -1,5 +1,6 @@
 import { defineManifest } from '@crxjs/vite-plugin'
 import { PINIMG_MATCH_PATTERNS, PINTEREST_MATCH_PATTERNS } from './src/shared/pinterest'
+import { ARIA2_HOST_PERMISSIONS } from './src/shared/aria2-settings'
 
 const runtimeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
 const browserTarget = (runtimeEnv.BROWSER_TARGET || 'chrome').toLowerCase()
@@ -40,6 +41,10 @@ export default defineManifest({
   version: '1.5.14',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions,
+  // Firefox 115 supports optional host patterns via optional_permissions (the dedicated key requires 128).
+  ...(isFirefoxTarget
+    ? { optional_permissions: ARIA2_HOST_PERMISSIONS }
+    : { optional_host_permissions: ARIA2_HOST_PERMISSIONS }),
   host_permissions: [
     ...PINTEREST_MATCH_PATTERNS,
     ...PINIMG_MATCH_PATTERNS,

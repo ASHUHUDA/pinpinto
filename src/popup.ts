@@ -9,6 +9,7 @@ import {
 } from './shared/download-settings';
 import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from './shared/download-batching';
 import { BatchTaskClient } from './shared/batch-task-client';
+import { bindAria2Controls, updateAria2ModeLabels } from './shared/aria2-controls';
 import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
 import {
     cancelDownload as cancelPopupDownload,
@@ -73,6 +74,7 @@ class PinVaultProPopup {
         this.setVersionBadge();
         this.bindButtonPressFeedback();
         this.updateLanguage();
+        await bindAria2Controls(() => this.language);
         await this.checkPinterestConnection();
         this.setupPeriodicUpdates();
         await this.batchTaskClient.restore();
@@ -182,6 +184,7 @@ class PinVaultProPopup {
             element.textContent = this.staticTranslations[this.language][key] || key;
         });
 
+        updateAria2ModeLabels(this.language);
         const statusText = document.getElementById('statusText');
         if (statusText && !document.getElementById('connectionStatus')?.classList.contains('connected') && !document.getElementById('connectionStatus')?.classList.contains('not-connected')) {
             statusText.textContent = this.translations[this.language].checkingPinterest;

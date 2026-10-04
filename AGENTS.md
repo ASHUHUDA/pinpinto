@@ -6,7 +6,8 @@
 
 - PinPinto 是面向 Chrome、Edge 和 Firefox 的 Pinterest 图片采集与批量下载扩展。
 - 核心体验：页面识别图片，用户可手动勾选下载，也可开启自动滚动与自动分批下载。
-- 自动下载成功标准：开启自动下载后自动启用自动滚动；每达到设定批次数量就暂停滚动、下载当前窗口；浏览器确认 ZIP 和补救单图下载都进入终态，并收到页面端压缩确认后，才释放页面记录并继续下一批。
+- 浏览器自动下载成功标准：开启自动下载后自动启用自动滚动；每达到设定批次数量就暂停滚动、下载当前窗口；浏览器确认 ZIP 和补救单图下载都进入终态，并收到页面端压缩确认后，才释放页面记录并继续下一批。
+- aria2 成功标准：所有入口以 RPC 接收成功为交接，不宣称落盘；自动模式明确拒绝可计数跳过，整个窗口交接结束且页面压缩确认后才推进下一批；断线/不可信响应停止且不重放，保留当前窗口。
 - 多浏览器成功标准：`dist` 始终保留 Chrome / Edge 构建，Firefox 构建进入独立 staging / artifact，避免误加载 manifest。
 
 ## 可改 / 禁改范围
@@ -21,7 +22,9 @@
 
 - `src/background.ts`：浏览器事件与消息入口。
 - `src/background/batch-coordinator.ts`：后台批量任务生命周期、取消、下载结算和自动批次 cursor 推进。
-- `src/background/batch-download.ts`：图片抓取、ZIP 生成与浏览器补救下载。
+- `src/background/batch-download.ts` / `batch-zip-adapter.ts`：图片抓取、ZIP 输出执行适配与浏览器补救下载。
+- `src/background/aria2-client.ts` / `aria2-config.ts` / `aria2-batch-window.ts`：本机 RPC、可信设置入口、逐张交接与持久化窗口状态。
+- `src/shared/aria2-controls.ts`：弹窗和侧边栏共用的 aria2 设置与连接测试。
 - `src/content.ts`：页面图片扫描、选择覆盖层和内容脚本消息入口。
 - `src/content/auto-batch-session.ts`：自动滚动、批次窗口发送、暂停/恢复握手。
 - `src/content/session-store.ts`：页面图片记录、选中状态和自动批次压缩。
@@ -42,7 +45,8 @@
 - `commitAutoBatchWindow`：后台在浏览器下载结算后要求页面压缩并释放已下载窗口。
 - `resumeAutoBatchSession`：页面确认压缩后，后台推进 cursor 并恢复下一轮滚动。
 - `finishAutoBatchSession`：页面滚动耗尽且没有剩余窗口时结束自动任务。
-- 自动批次必须保持单活动窗口、cursor 对齐、浏览器下载终态先于页面压缩。
+- 自动批次必须保持单活动窗口、cursor 对齐；浏览器模式下载终态先于页面压缩，aria2 模式以明确交接/明确跳过先于页面压缩。
+- aria2 密钥只放 `storage.session`，不得进入 sync、local、任务快照或页面消息；端点只允许 localhost/127.0.0.1，用可选权限授权，禁止重定向和自动重放。每次提交指定唯一 GID 防浏览器底层 POST 重发。
 
 ## 验证命令
 

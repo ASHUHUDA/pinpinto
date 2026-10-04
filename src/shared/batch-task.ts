@@ -1,5 +1,5 @@
 export type BatchTaskMode = 'manual' | 'auto';
-export type BatchOutputMode = 'zip' | 'individual';
+export type BatchOutputMode = 'zip' | 'individual' | 'aria2';
 
 export type BatchTaskPhase =
     | 'queued'
@@ -69,7 +69,17 @@ export type IndividualDownloadEntry = {
     error?: string;
 };
 
+export type Aria2WindowSubmission = {
+    submittedCount: number;
+    rejectedCount: number;
+    uncertainCount: number;
+    remainingCount: number;
+    inFlight: boolean;
+    done: boolean;
+};
+
 export type ActiveBatchWindow = {
+    aria2Submission?: Aria2WindowSubmission;
     windowId: string;
     startOffset: number;
     endOffset: number;
@@ -107,6 +117,8 @@ export type BatchTaskSnapshot = {
     fallbackCount: number;
     unresolvedCount: number;
     individualCount: number;
+    aria2SubmittedCount?: number;
+    aria2RejectedCount?: number;
     failedCount: number;
     cancelledCount: number;
     associatedDownloadIds: number[];

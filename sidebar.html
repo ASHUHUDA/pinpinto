@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/src/sidebar.css">
     <link rel="stylesheet" href="/src/shared/download-settings-controls.css">
+    <link rel="stylesheet" href="/src/shared/aria2-controls.css">
 </head>
 
 <body>
@@ -156,8 +157,28 @@
                 <select class="download-method-select" id="singleImageDownloadMethod">
                     <option value="browser" data-i18n="setting.singleImageBrowser">Browser</option>
                     <option value="external" data-i18n="setting.singleImageExternal">External downloader</option>
+                    <option value="aria2">aria2 RPC</option>
                 </select>
             </label>
+            <label class="download-setting-row" for="batchDownloadMethod">
+                <span class="download-setting-label" data-i18n="aria2.batchMethod">Batch / auto download</span>
+                <select class="download-method-select" id="batchDownloadMethod">
+                    <option value="browser" data-i18n="setting.singleImageBrowser">Browser</option>
+                    <option value="aria2">aria2 RPC</option>
+                </select>
+            </label>
+            <details class="aria2-config">
+                <summary data-i18n="aria2.settings">aria2 connection settings</summary>
+                <label for="aria2Endpoint" data-i18n="aria2.endpoint">Local RPC URL</label>
+                <input id="aria2Endpoint" type="url" value="http://127.0.0.1:6800/jsonrpc" spellcheck="false" autocomplete="off">
+                <button type="button" class="btn btn-ghost" id="aria2MotrixBtn" data-i18n="aria2.motrix">Use Motrix port</button>
+                <label for="aria2Secret" data-i18n="aria2.secret">RPC secret (session only)</label>
+                <input id="aria2Secret" type="password" autocomplete="off" maxlength="4096" aria-describedby="aria2Help">
+                <label class="aria2-clear"><input id="aria2ClearSecret" type="checkbox"><span data-i18n="aria2.clearSecret">Clear saved secret</span></label>
+                <p id="aria2Help" data-i18n="aria2.help">Sends individual images, not ZIPs. Accepted tasks are handed off, not confirmed downloads. Blank keeps the session secret; re-enter it after restarting the browser.</p>
+                <button type="button" class="btn btn-ghost" id="aria2TestBtn" data-i18n="aria2.test">Save &amp; test</button>
+                <p id="aria2Status" role="status" aria-live="polite"></p>
+            </details>
         </div>
 
         <div class="panel-section batch-limit-panel">

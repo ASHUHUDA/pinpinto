@@ -7,6 +7,7 @@ import { OFFSCREEN_MESSAGE_TARGET } from './background/offscreen-protocol';
 import { SingleDownloadRegistry } from './background/single-download-registry';
 import { cleanupOrphanSingleBlobJobs } from './background/batch-recovery';
 import { rememberBounded } from './background/early-terminal-buffer';
+import { handleAria2SettingsMessage, isAria2SettingsAction } from './background/aria2-config';
 import {
     SingleImageDownloadService,
     type SingleImageDownloadResult
@@ -218,6 +219,7 @@ class PinVaultProBackground {
                 autoScroll: false,
                 downloadAsZip: true,
                 singleImageDownloadMethod: 'browser',
+                batchDownloadMethod: 'browser',
                 maxConcurrentDownloads: 3,
                 downloadPath: ''
             });
@@ -262,6 +264,10 @@ class PinVaultProBackground {
                 return;
             }
 
+            if (isAria2SettingsAction(request.action)) {
+                sendResponse(await handleAria2SettingsMessage(request, sender));
+                return;
+            }
             switch (request.action) {
                 case 'ping':
                     sendResponse({ status: 'ready', timestamp: Date.now() });
@@ -403,7 +409,8 @@ class PinVaultProBackground {
             // Get user settings
             const settings = await chrome.storage.sync.get({
                 filenameFormat: 'title_date',
-                highQuality: true
+                highQuality: true,
+                singleImageDownloadMethod: 'browser'
             });
 
             // Prepare image data

@@ -1,4 +1,5 @@
 import type { BlobJobHost } from './blob-runner';
+import type { Aria2SubmitClient } from './aria2-client';
 
 export type DownloadImage = string | {
     id?: string;
@@ -27,6 +28,7 @@ export type TrackedDownloadInfo = {
 };
 
 export type BatchCoordinatorHost = {
+    createAria2Client?: () => Promise<Aria2SubmitClient>;
     blobHost: BlobJobHost;
     activeDownloads: Map<number, TrackedDownloadInfo>;
     maxConcurrentDownloads: number;

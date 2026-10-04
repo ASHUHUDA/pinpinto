@@ -2,6 +2,29 @@ export type SupportedLanguage = 'en' | 'zh';
 
 export const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 
+const ARIA2_TRANSLATIONS = {
+    en: {
+        'aria2.batchMethod': 'Batch / auto download',
+        'aria2.settings': 'aria2 connection settings',
+        'aria2.endpoint': 'Local RPC URL',
+        'aria2.motrix': 'Use Motrix port',
+        'aria2.secret': 'RPC secret (session only)',
+        'aria2.clearSecret': 'Clear saved secret',
+        'aria2.test': 'Save & test',
+        'aria2.help': 'Sends individual images, not ZIPs. Accepted tasks are handed off, not confirmed downloads. Blank keeps the session secret; re-enter it after restarting the browser.'
+    },
+    zh: {
+        'aria2.batchMethod': '批量 / 自动下载方式',
+        'aria2.settings': 'aria2 连接设置',
+        'aria2.endpoint': '本机 RPC 地址',
+        'aria2.motrix': '使用 Motrix 端口',
+        'aria2.secret': 'RPC 密钥（仅本次会话）',
+        'aria2.clearSecret': '清除已保存的密钥',
+        'aria2.test': '保存并测试连接',
+        'aria2.help': '逐张交给下载器，不生成 ZIP；接收成功不代表下载完成。密钥留空保留，重启浏览器后需重新输入。'
+    }
+};
+
 export const POPUP_STATUS_TRANSLATIONS: Record<SupportedLanguage, { checkingPinterest: string; connected: string; notConnected: string }> = {
     en: {
         checkingPinterest: 'Checking...',
@@ -17,6 +40,7 @@ export const POPUP_STATUS_TRANSLATIONS: Record<SupportedLanguage, { checkingPint
 
 export const POPUP_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     en: {
+        ...ARIA2_TRANSLATIONS.en,
         'app.subtitle': 'Pinterest Downloader',
         'stats.total': 'Images',
         'stats.selected': 'Selected',
@@ -47,6 +71,7 @@ export const POPUP_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<string,
         'menu.github': 'GitHub'
     },
     zh: {
+        ...ARIA2_TRANSLATIONS.zh,
         'app.subtitle': 'Pinterest 下载器',
         'stats.total': '页面图片',
         'stats.selected': '已选择',
@@ -113,6 +138,7 @@ export const SIDEBAR_STATUS_TRANSLATIONS: Record<SupportedLanguage, Record<strin
 
 export const SIDEBAR_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     en: {
+        ...ARIA2_TRANSLATIONS.en,
         'stats.total': 'Images',
         'stats.selected': 'Selected',
         'panel.actions': 'Actions',
@@ -141,6 +167,7 @@ export const SIDEBAR_STATIC_TRANSLATIONS: Record<SupportedLanguage, Record<strin
         'action.openPinterest': 'Open Pinterest'
     },
     zh: {
+        ...ARIA2_TRANSLATIONS.zh,
         'stats.total': '页面图片',
         'stats.selected': '已选择',
         'panel.actions': '快捷操作',

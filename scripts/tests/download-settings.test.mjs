@@ -12,6 +12,7 @@ test('shared download settings defaults include only common download settings', 
     autoBatchDownload: false,
     downloadAsZip: true,
     singleImageDownloadMethod: 'browser',
+    batchDownloadMethod: 'browser',
     autoBatchLimit: 100,
     autoBatchTotalBatches: 0,
     filenameFormat: 'title_date',
@@ -36,7 +37,8 @@ test('shared download settings defaults include only common download settings', 
 test('shared download controls normalize storage values strictly', async () => {
   const {
     normalizeDownloadAsZip,
-    normalizeSingleImageDownloadMethod
+    normalizeSingleImageDownloadMethod,
+    normalizeBatchDownloadMethod
   } = await loadTsModule('src/shared/download-settings.ts');
 
   assert.equal(normalizeDownloadAsZip(true), true);
@@ -47,6 +49,9 @@ test('shared download controls normalize storage values strictly', async () => {
 
   assert.equal(normalizeSingleImageDownloadMethod('browser'), 'browser');
   assert.equal(normalizeSingleImageDownloadMethod('external'), 'external');
+  assert.equal(normalizeSingleImageDownloadMethod('aria2'), 'aria2');
+  assert.equal(normalizeBatchDownloadMethod('aria2'), 'aria2');
+  for (const value of [undefined, null, 'external', 'zip', {}, true]) assert.equal(normalizeBatchDownloadMethod(value), 'browser');
   for (const unknownValue of [undefined, null, '', 'download-manager', true, 1, {}]) {
     assert.equal(normalizeSingleImageDownloadMethod(unknownValue), 'browser');
   }

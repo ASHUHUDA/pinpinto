@@ -15,6 +15,7 @@ function installBackgroundChrome(options = {}) {
   let onMessage;
   let onDownloadChanged;
   let onTabRemoved;
+  let onContextMenuClick;
   let nextDownloadId = 1;
   let rejectNextDownload = false;
   let failNextBlob = false;
@@ -114,7 +115,7 @@ function installBackgroundChrome(options = {}) {
     contextMenus: {
       removeAll(callback) { callback?.(); },
       create() {},
-      onClicked: { addListener() {} }
+      onClicked: { addListener(listener) { onContextMenuClick = listener; } }
     },
     downloads: {
       onChanged: { addListener(listener) { onDownloadChanged = listener; } },
@@ -152,6 +153,7 @@ function installBackgroundChrome(options = {}) {
       onDownloadChanged(delta);
     },
     closeTab(tabId) { onTabRemoved(tabId); },
+    clickContextMenu(info) { onContextMenuClick(info, { id: 7 }); },
     async message(request, tabId = 7) {
       return new Promise((resolve) => onMessage(request, { tab: { id: tabId } }, resolve));
     }
@@ -184,6 +186,31 @@ function request(imageId, overrides = {}) {
     }
   };
 }
+
+test('aria2 single message and right-click menu both honor the persisted method without browser or Blob downloads', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const harness = installBackgroundChrome({ sessionValues: { singleImageDownloadMethod: 'aria2' } });
+    globalThis.chrome.permissions = { async contains() { return true; } };
+    const calls = [];
+    globalThis.fetch = async (_, options) => {
+      const body = JSON.parse(options.body); calls.push(body);
+      return { ok: true, async json() { return { jsonrpc: '2.0', id: body.id, result: body.params.at(-1).gid }; } };
+    };
+    await loadTsModule('src/background.ts');
+    const result = await harness.message(request('aria2-card', { singleImageDownloadMethod: 'aria2' }));
+    assert.equal(result.success, true);
+    assert.equal(result.method, 'aria2');
+    assert.equal(result.state, 'submitted');
+    assert.match(result.gid, /^[a-f0-9]{16}$/);
+    harness.clickContextMenu({ srcUrl: 'https://i.pinimg.com/236x/context.jpg' });
+    await waitFor(() => calls.length === 2);
+    assert.ok(calls.every((call) => call.method === 'aria2.addUri'));
+    assert.equal(calls[1].params[0][0], 'https://i.pinimg.com/originals/context.jpg');
+    assert.deepEqual(harness.downloadCalls, []);
+    assert.equal(harness.blobCalls.some((call) => call.operation === 'start'), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
 
 test('browser single uses a file Blob, remains pending, and releases its lease on terminal settlement', async () => {
   const harness = installBackgroundChrome();

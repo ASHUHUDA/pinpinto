@@ -8,6 +8,7 @@ import {
 } from './shared/download-settings';
 import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from './shared/download-batching';
 import { BatchTaskClient } from './shared/batch-task-client';
+import { bindAria2Controls, updateAria2ModeLabels } from './shared/aria2-controls';
 import { isTerminalBatchPhase, type BatchTaskSnapshot } from './shared/batch-task';
 import {
     cancelDownload as cancelSidebarDownload,
@@ -56,6 +57,7 @@ class PinVaultProSidebar {
         this.setVersionBadge();
         this.bindButtonPressFeedback();
         this.applyLanguage();
+        await bindAria2Controls(() => this.language);
         this.checkPinterestStatus();
 
         this.statsUpdateTimer = window.setInterval(() => {
@@ -141,6 +143,7 @@ class PinVaultProSidebar {
             element.textContent = this.staticTranslations[this.language][key] || key;
         });
 
+        updateAria2ModeLabels(this.language);
         const languageLabel = document.getElementById('currentLanguageLabel');
         if (languageLabel) {
             languageLabel.textContent =

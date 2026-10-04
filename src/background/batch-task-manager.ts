@@ -81,7 +81,7 @@ export class BatchTaskManager {
             this.snapshot = {
                 jobId,
                 mode: input.mode,
-                outputMode: input.mode === 'auto' ? 'zip' : input.outputMode === 'individual' ? 'individual' : 'zip',
+                outputMode: normalizeOutputMode(input.mode, input.outputMode),
                 targetTabId: typeof input.targetTabId === 'number' ? input.targetTabId : null,
                 phase: 'queued',
                 batchCursor: 0,
@@ -234,7 +234,7 @@ function normalizeSnapshot(candidate: BatchTaskSnapshot): BatchTaskSnapshot {
     return {
         ...candidate,
         mode,
-        outputMode: mode === 'auto' ? 'zip' : candidate.outputMode === 'individual' ? 'individual' : 'zip',
+        outputMode: normalizeOutputMode(mode, candidate.outputMode),
         targetTabId: typeof candidate.targetTabId === 'number' ? candidate.targetTabId : null,
         associatedDownloadIds: uniqueNumbers(candidate.associatedDownloadIds),
         pendingFallbackDownloadIds: uniqueNumbers(candidate.pendingFallbackDownloadIds),
@@ -254,6 +254,11 @@ function normalizeSnapshot(candidate: BatchTaskSnapshot): BatchTaskSnapshot {
         continueAutoScrollAfterStop: candidate.continueAutoScrollAfterStop === true,
         settings: candidate.settings ?? {}
     };
+}
+
+function normalizeOutputMode(mode: BatchTaskMode, outputMode: unknown): BatchOutputMode {
+    if (outputMode === 'aria2') return 'aria2';
+    return mode === 'auto' ? 'zip' : outputMode === 'individual' ? 'individual' : 'zip';
 }
 
 function nonNegativeInteger(value: unknown): number {

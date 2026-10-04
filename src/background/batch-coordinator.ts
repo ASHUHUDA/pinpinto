@@ -1,10 +1,12 @@
-import { runBatchDownload } from './batch-download';
-import { cancelBatchJobState, createBatchJobState, isBatchCancellationError, isBatchJobCancelled, throwIfBatchJobCancelled, type BatchJobState } from './batch-job';
+import { runCoordinatorZipWindow } from './batch-zip-adapter';
+import { cancelBatchJobState, createBatchJobState, isBatchCancellationError, isBatchJobCancelled, type BatchJobState } from './batch-job';
 import { buildSingleDownloadPath } from './download-path';
 import { getSettlementOutcome, registerExpectedDownload, settleDownload, type DownloadSettlementKind, type DownloadTerminalState } from './download-settlement';
 import { BatchTaskManager } from './batch-task-manager';
 import { normalizeAutoBatchLimit, normalizeAutoBatchTotalBatches } from '../shared/download-batching';
-import { normalizeDownloadAsZip } from '../shared/download-settings';
+import { normalizeBatchDownloadMethod, normalizeDownloadAsZip } from '../shared/download-settings';
+import { aria2WindowSummary, markAria2InFlightUncertain, submitAria2Window } from './aria2-batch-window';
+import { formatBatchOutputSummary } from './batch-output-summary';
 import { isTerminalBatchPhase, type BatchRunResult, type BatchTaskSnapshot } from '../shared/batch-task';
 import { type AutoBatchWindowRequest, type BatchCoordinatorHost, type CommitResponse, type DownloadImage, type StartBatchRequest, type TrackedDownloadInfo } from './batch-coordinator-types';
 import { applySettlement, createActiveWindow, integerOr, uniqueNumbers, windowSettlement } from './batch-window-state';
@@ -54,7 +56,8 @@ export class BatchCoordinator {
         const targetTabId = typeof request.targetTabId === 'number' ? request.targetTabId : senderTabId;
         const autoBatchLimit = normalizeAutoBatchLimit(request.autoBatchLimit ?? settings.autoBatchLimit);
         const autoBatchTotalBatches = normalizeAutoBatchTotalBatches(request.autoBatchTotalBatches ?? settings.autoBatchTotalBatches);
-        const outputMode = mode === 'auto' ? 'zip' : normalizeDownloadAsZip(request.downloadAsZip ?? settings.downloadAsZip) ? 'zip' : 'individual';
+        const outputMode = normalizeBatchDownloadMethod(settings.batchDownloadMethod) === 'aria2'
+            ? 'aria2' : mode === 'auto' ? 'zip' : normalizeDownloadAsZip(request.downloadAsZip ?? settings.downloadAsZip) ? 'zip' : 'individual';
         const result = await this.taskManager.start({
             mode,
             outputMode,
@@ -137,6 +140,10 @@ export class BatchCoordinator {
         if (snapshot.outputMode === 'individual') await this.individualDownloads.cancel(snapshot.jobId, false);
         const activeSnapshot = this.taskManager.getSnapshot() ?? snapshot;
         await this.taskManager.cancel(snapshot.jobId);
+        if (snapshot.outputMode === 'aria2') {
+            const state = snapshot.activeWindow?.aria2Submission;
+            await this.taskManager.update(snapshot.jobId, { details: `已停止后续 aria2 提交；已交接的任务不会撤销。${aria2WindowSummary(markAria2InFlightUncertain(state))}` });
+        }
         await Promise.all(activeSnapshot.associatedDownloadIds.map((downloadId) => chrome.downloads.cancel(downloadId).catch(() => {})));
         await this.cancelBlobJobs(snapshot.jobId);
         activeSnapshot.associatedDownloadIds.forEach((downloadId) => this.host.activeDownloads.delete(downloadId));
@@ -189,6 +196,11 @@ export class BatchCoordinator {
         snapshot.associatedDownloadIds.forEach((id) => this.runtime?.activeDownloadIds.add(id));
 
         if (snapshot.activeWindow) {
+            if (snapshot.outputMode === 'aria2') {
+                if (snapshot.activeWindow.aria2Submission?.done) await this.queueWindowProgress(snapshot.jobId);
+                else await this.fail(snapshot.jobId, 'aria2 提交过程已中断，不会自动重放，请核查下载器队列。', 'interrupted');
+                return;
+            }
             if (snapshot.outputMode === 'individual') {
                 await this.individualDownloads.recover(snapshot.jobId);
                 return;
@@ -257,6 +269,11 @@ export class BatchCoordinator {
                     : '未接收到可下载图片。',
                 activeWindow
             });
+            if (snapshot.outputMode === 'aria2') {
+                await submitAria2Window({ taskManager: this.taskManager, host: this.host, runtime,
+                    images: request.images, settings: snapshot.settings, sequenceOffset: request.startIndex });
+                return;
+            }
             if (snapshot.outputMode === 'individual') {
                 await this.individualDownloads.start({
                     jobId: snapshot.jobId,
@@ -266,33 +283,10 @@ export class BatchCoordinator {
                 });
                 return;
             }
-            const runResult = await runBatchDownload({
-                blobHost: this.host.blobHost,
-                maxConcurrentDownloads: this.host.maxConcurrentDownloads,
-                requestFallbackDownload: (fallbackRequest) => this.requestFallbackDownload(fallbackRequest),
-                throwIfBatchCancelled: throwIfBatchJobCancelled,
-                isBatchCancellationError,
-                sendProgressUpdate: (job, progress, details) => {
-                    const current = this.taskManager.getSnapshot();
-                    if (!current || current.jobId !== job.id || isTerminalBatchPhase(current.phase)) return;
-                    const phase = progress < 60 ? 'fetching' : progress < 100 ? 'compressing' : 'downloading';
-                    void this.taskManager.mutate(job.id, (latest) => ({
-                        phase,
-                        progress,
-                        details,
-                        activeWindow: latest.activeWindow ? {
-                            ...latest.activeWindow,
-                            hostState: phase === 'fetching' ? 'fetching' : phase === 'compressing' ? 'compressing' : latest.activeWindow.hostState
-                        } : null
-                    }));
-                },
-                normalizeImageUrlForDeduplication: this.host.normalizeImageUrlForDeduplication,
-                getDownloadCandidateUrls: this.host.getDownloadCandidateUrls,
-                buildIndexedFilename: this.host.buildIndexedFilename,
-                extractFilenameFromUrl: this.host.extractFilenameFromUrl,
-                formatLocalTimestamp: this.host.formatLocalTimestamp,
-                rememberRequestedFilename: this.host.rememberRequestedFilename
-            }, runtime, request.images, request.settings, { sequenceOffset: request.startIndex });
+            const runResult = await runCoordinatorZipWindow({
+                host: this.host, taskManager: this.taskManager, runtime,
+                requestFallbackDownload: (fallbackRequest) => this.requestFallbackDownload(fallbackRequest)
+            }, request.images, request.settings, request.startIndex);
             if (isBatchJobCancelled(runtime)) return;
             await this.recordRunResult(snapshot.jobId, runResult, request.settings);
         } catch (error) {
@@ -301,7 +295,7 @@ export class BatchCoordinator {
             }
         } finally {
             this.processingWindow = false;
-            if (snapshot.outputMode === 'zip') await this.queueWindowProgress(snapshot.jobId);
+            if (snapshot.outputMode === 'zip' || snapshot.outputMode === 'aria2') await this.queueWindowProgress(snapshot.jobId);
         }
     }
 
@@ -465,6 +459,12 @@ export class BatchCoordinator {
         if (this.processingWindow) return;
         const snapshot = this.taskManager.getSnapshot();
         if (!snapshot?.activeWindow || snapshot.jobId !== jobId || isTerminalBatchPhase(snapshot.phase)) return;
+        if (snapshot.outputMode === 'aria2') {
+            if (!snapshot.activeWindow.aria2Submission?.done) return;
+            if (snapshot.mode === 'auto') await this.commitAutoWindow(snapshot);
+            else await this.acceptSettledWindow(snapshot);
+            return;
+        }
         const outcome = getSettlementOutcome(windowSettlement(snapshot.activeWindow));
         if (outcome.status === 'pending') {
             await this.taskManager.update(jobId, {
@@ -530,7 +530,7 @@ export class BatchCoordinator {
 
     private async acceptSettledWindow(snapshot: BatchTaskSnapshot): Promise<void> {
         const latest = this.taskManager.getSnapshot();
-        if (!latest || latest.jobId !== snapshot.jobId) return;
+        if (!latest || latest.jobId !== snapshot.jobId || isTerminalBatchPhase(latest.phase)) return;
         snapshot = latest;
         const activeWindow = snapshot.activeWindow;
         if (!activeWindow) return;
@@ -549,6 +549,10 @@ export class BatchCoordinator {
                 zippedCount: current.zippedCount + activeWindow.zippedCount,
                 fallbackCount: current.fallbackCount + activeWindow.fallbackCount,
                 unresolvedCount: current.unresolvedCount + activeWindow.unresolvedCount,
+                ...(current.outputMode === 'aria2' ? {
+                    aria2SubmittedCount: (current.aria2SubmittedCount ?? 0) + (activeWindow.aria2Submission?.submittedCount ?? 0),
+                    aria2RejectedCount: (current.aria2RejectedCount ?? 0) + (activeWindow.aria2Submission?.rejectedCount ?? 0)
+                } : {}),
                 autoBatchCompletedBatches: completedBatches,
                 autoSessionFinished: current.mode === 'manual' || finalWindow,
                 activeWindow: null
@@ -564,7 +568,9 @@ export class BatchCoordinator {
             await this.taskManager.update(updated.jobId, {
                 phase: 'scrolling',
                 progress: 0,
-                details: '当前批次已落盘并释放页面记录，继续扫描下一批。'
+                details: updated.outputMode === 'aria2'
+                    ? `当前批次已交接 aria2 并释放记录，继续自动提交。累计已接收 ${updated.aria2SubmittedCount ?? 0} 张，拒绝跳过 ${updated.aria2RejectedCount ?? 0} 张；文件下载由下载器负责。`
+                    : '当前批次已落盘并释放页面记录，继续扫描下一批。'
             });
             if (!await this.resumeAutoSession(updated)) await this.fail(updated.jobId, '目标标签页不可用，无法继续下一批。');
             return;
@@ -582,9 +588,10 @@ export class BatchCoordinator {
         const cleared = await this.taskManager.clearCompleted(jobId, {
             phase: 'completed',
             progress: 100,
-            details: this.summary(snapshot)
+            details: formatBatchOutputSummary(snapshot)
         }, async () => {
-            if (snapshot.targetTabId === null) return true;
+            // Handoff is not file completion: retain manual selections and unsubmitted records.
+            if (snapshot.outputMode === 'aria2' || snapshot.targetTabId === null) return true;
             const response = await sendTabMessage(snapshot.targetTabId, { action: 'clearAllImages', jobId });
             return response?.success === true;
         });
@@ -603,20 +610,13 @@ export class BatchCoordinator {
         this.processingWindow = false;
     }
 
-    private summary(snapshot: BatchTaskSnapshot): string {
-        if (snapshot.zippedCount === 0 && snapshot.fallbackCount > 0 && snapshot.unresolvedCount === 0) {
-            return `已由浏览器完成 ${snapshot.fallbackCount} 张单独下载。`;
-        }
-        return `ZIP 图片 ${snapshot.zippedCount} 张，浏览器补救成功 ${snapshot.fallbackCount} 张，未解决 ${snapshot.unresolvedCount} 张。`;
-    }
-
     private async fail(jobId: string, error: string, phase: 'failed' | 'interrupted' = 'failed'): Promise<void> {
         const snapshot = this.taskManager.getSnapshot();
         if (!snapshot || snapshot.jobId !== jobId || isTerminalBatchPhase(snapshot.phase)) return;
         await this.taskManager.update(jobId, {
             phase,
             progress: 100,
-            details: `批量任务${phase === 'failed' ? '失败' : '中断'}：${error}`,
+            details: `批量任务${phase === 'failed' ? '失败' : '中断'}：${error}${snapshot.outputMode === 'aria2' ? aria2WindowSummary(markAria2InFlightUncertain(snapshot.activeWindow?.aria2Submission)) : ''}`,
             autoSessionFinished: true
         });
         this.runtime = null;

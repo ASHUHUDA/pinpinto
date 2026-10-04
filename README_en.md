@@ -10,8 +10,11 @@ A Pinterest image collection and batch-download extension for Chrome, Edge, and 
 - Customize the image count for each auto-download batch
 - Download manually selected images as a ZIP or individual files
 - Use browser Blob downloads for card-level images, with a best-effort external-downloader option
+- Hand off card images, context-menu downloads, manual batches, and automatic batches to a local aria2 RPC downloader; acceptance is not disk completion
 - Stop auto-download after the current batch or cancel it immediately
 - Control a locked target tab from either the popup or side panel
+
+See the [aria2 / Motrix guide (Chinese)](docs/aria2.md) for RPC setup, session-only secrets, connection tests, and failure handling.
 
 ## Quick Start
 1. Install dependencies

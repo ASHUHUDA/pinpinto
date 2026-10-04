@@ -1,4 +1,4 @@
-export type SingleDownloadPhase = 'idle' | 'pending' | 'submitted' | 'complete' | 'retry';
+export type SingleDownloadPhase = 'idle' | 'pending' | 'submitted' | 'uncertain' | 'complete' | 'retry';
 
 export type SingleDownloadState = {
     imageId: string;
@@ -9,7 +9,7 @@ export type SingleDownloadState = {
 };
 
 export type SingleDownloadSettlement = {
-    state: 'submitted' | 'complete' | 'rejected' | 'interrupted';
+    state: 'submitted' | 'uncertain' | 'complete' | 'rejected' | 'interrupted';
     error?: string | null;
 };
 
@@ -39,7 +39,7 @@ export function acceptSingleDownload(state: SingleDownloadState): {
     accepted: boolean;
     state: SingleDownloadState;
 } {
-    if (state.phase === 'pending' || state.phase === 'submitted' || state.phase === 'complete') {
+    if (state.phase === 'pending' || state.phase === 'submitted' || state.phase === 'uncertain' || state.phase === 'complete') {
         return { accepted: false, state };
     }
     return {
@@ -59,6 +59,9 @@ export function settleSingleDownload(
     settlement: SingleDownloadSettlement
 ): SingleDownloadState {
     if (state.phase !== 'pending') return state;
+    if (settlement.state === 'uncertain') {
+        return { ...state, phase: 'uncertain', disabled: true, error: settlement.error || 'Check the downloader queue before retrying.', removeImageId: null };
+    }
     if (settlement.state === 'submitted') {
         return {
             ...state,
@@ -117,7 +120,7 @@ export class SingleDownloadController {
                 return true;
             }
             this.applySettlement(entry, {
-                state: 'rejected',
+                state: response?.state === 'uncertain' ? 'uncertain' : 'rejected',
                 error: response?.error || 'The browser rejected the download request.'
             });
         } catch (error) {
@@ -162,6 +165,8 @@ export class SingleDownloadController {
             ? 'Downloading...'
             : state.phase === 'retry'
                 ? 'Retry'
+                : state.phase === 'uncertain'
+                    ? 'Submission uncertain — check downloader'
                 : state.phase === 'submitted'
                     ? 'Sent to external downloader'
                 : state.phase === 'complete'
@@ -170,7 +175,7 @@ export class SingleDownloadController {
         if (label instanceof HTMLElement) label.textContent = text;
 
         const detail = state.error ? `: ${state.error}` : '';
-        button.title = state.phase === 'retry'
+        button.title = state.phase === 'uncertain' ? `${text}${detail}` : state.phase === 'retry'
             ? `Download failed${detail}`
             : text;
         button.setAttribute('aria-label', button.title);

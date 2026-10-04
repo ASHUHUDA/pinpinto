@@ -44,7 +44,7 @@ What each gate proves:
 - `audit:dependencies`: installed production versions against npm bulk advisories and OSV.
 - `build:browsers`: Chrome ZIP and Firefox XPI generation.
 - `audit:production`: manifest/version/browser permissions and absence of E2E-only code in both production packages.
-- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, and dynamic ARIA progress in Chromium.
+- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, dynamic ARIA progress, and local aria2 RPC handoff (single/manual/auto, rejection, ambiguity, and transport replay) in Chromium.
 
 ## Release Publication
 
@@ -93,6 +93,10 @@ The live smoke is supplementary selector-drift evidence, not a CI gate:
 4. Record login, consent, network, or browser availability limitations separately.
 
 Deterministic fixtures own correctness and CI. A blocked live Pinterest smoke never replaces or weakens the deterministic E2E suite.
+
+## Optional aria2 Downloader Smoke
+
+Follow the [aria2 setup guide](aria2.md) with an already running local Motrix or aria2c instance. Verify connection testing, card and context-menu submission, manual batches, and automatic handoff in your target browser. Check actual task creation and the downloader's default directory there. A successful RPC response does not prove image bytes reached disk. Mock RPC E2E and Firefox package builds do not replace this runtime smoke.
 
 ## Optional External Downloader Smoke
 

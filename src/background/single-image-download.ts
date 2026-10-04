@@ -3,6 +3,8 @@ import { buildSingleDownloadPath } from './download-path';
 import { BLOB_FETCH_TIMEOUT_MS, type BlobJobHost } from './blob-runner';
 import { buildSingleFilename, formatLocalTimestamp } from './filename';
 import { getDownloadCandidateUrls } from './image-url';
+import { Aria2RpcError } from './aria2-client';
+import { createConfiguredAria2Client } from './aria2-config';
 
 export type SingleImageData = {
     id?: string;
@@ -30,9 +32,11 @@ export type BrowserSingleDownloadRegistration = {
 export type SingleImageDownloadResult =
     | { success: true; method: 'browser'; state: 'pending'; downloadId: number }
     | { success: true; method: 'external'; state: 'submitted'; downloadId: number }
-    | { success: false; method: SingleImageDownloadMethod; state: 'rejected'; error: string };
+    | { success: true; method: 'aria2'; state: 'submitted'; gid: string }
+    | { success: false; method: SingleImageDownloadMethod; state: 'rejected' | 'uncertain'; error: string };
 
 type SingleImageDownloadDependencies = {
+    submitAria2?: (url: string, filename: string) => Promise<string>;
     blobHost: BlobJobHost;
     registerBrowserDownload: (registration: BrowserSingleDownloadRegistration) => Promise<void>;
     removeTrackedDownload: (downloadId: number) => void;
@@ -67,6 +71,19 @@ export class SingleImageDownloadService {
             return rejected(method, 'Image URL is missing.');
         }
 
+        if (method === 'aria2') {
+            try {
+                const filename = buildSingleFilename(formatLocalTimestamp(), candidateUrls[0], input.imageData.originalFilename);
+                const gid = this.dependencies.submitAria2
+                    ? await this.dependencies.submitAria2(candidateUrls[0], filename)
+                    : await (await createConfiguredAria2Client()).addUri(candidateUrls[0], filename);
+                return { success: true, method: 'aria2', state: 'submitted', gid };
+            } catch (error) {
+                return { success: false, method: 'aria2',
+                    state: error instanceof Aria2RpcError && error.kind !== 'uncertain' ? 'rejected' : 'uncertain',
+                    error: error instanceof Aria2RpcError ? error.message : 'aria2 submission is uncertain. Check the downloader queue before retrying.' };
+            }
+        }
         if (method === 'external') {
             return this.submitExternal(candidateUrls[0], input.imageData);
         }

@@ -398,6 +398,12 @@ if (window.pinVaultContentLoaded) {
                         originalFilename: imageData.originalFilename
                     },
                     settings
+                }).catch((error) => {
+                    if (settings.singleImageDownloadMethod === 'aria2') return {
+                        success: false, state: 'uncertain',
+                        error: 'Background response lost. Check the downloader queue before retrying.'
+                    };
+                    throw error;
                 });
             });
         }
