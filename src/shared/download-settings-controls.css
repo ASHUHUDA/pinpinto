@@ -75,6 +75,7 @@
 }
 
 .settings-heading-with-info {
+    position: relative;
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
@@ -94,7 +95,7 @@
 }
 
 .settings-info {
-    position: relative;
+    position: static;
     display: inline-flex;
     flex: 0 0 auto;
     z-index: 1;
@@ -148,8 +149,9 @@
     top: calc(100% + 7px);
     bottom: auto;
     left: 0;
-    width: min(240px, calc(100vw - 40px));
-    min-width: 160px;
+    box-sizing: border-box;
+    width: min(240px, calc(100% - 88px));
+    min-width: 0;
     padding: 8px 10px;
     border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.15));
     border-radius: 6px;

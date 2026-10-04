@@ -142,21 +142,21 @@ async function expectLocalizedDownloadControls(page: Page, language: 'en' | 'zh'
         htmlLanguage: 'en',
         zip: 'Download as ZIP',
         method: 'Single-image download',
-        tooltip: 'Total batches: leave blank or enter 0 for unlimited batches',
+        tooltip: 'Images per batch: 1–500. Total batches: leave blank or enter 0 for unlimited batches',
         cancel: 'Cancel current task'
       }
     : {
         htmlLanguage: 'zh-CN',
         zip: '压缩包下载',
         method: '单图下载方式',
-        tooltip: '总批下载数量：留空或输入 0 为不限批次',
+        tooltip: '每批下载数量：1–500。总批下载数量：留空或输入 0 为不限批次',
         cancel: '取消当前任务'
       };
   const otherZip = language === 'en' ? '压缩包下载' : 'Download as ZIP';
   const otherMethod = language === 'en' ? '单图下载方式' : 'Single-image download';
   const otherTooltip = language === 'en'
-    ? '总批下载数量：留空或输入 0 为不限批次'
-    : 'Total batches: leave blank or enter 0 for unlimited batches';
+    ? '每批下载数量：1–500。总批下载数量：留空或输入 0 为不限批次'
+    : 'Images per batch: 1–500. Total batches: leave blank or enter 0 for unlimited batches';
   const otherCancel = language === 'en' ? '取消当前任务' : 'Cancel current task';
 
   await expect(page.locator('html')).toHaveAttribute('lang', expected.htmlLanguage);
