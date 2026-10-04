@@ -1,6 +1,6 @@
 # 使用 aria2 下载器
 
-本指南面向 PinPinto 用户。功能适用于 Chrome、Edge 和 Firefox，可连接本机开放 aria2 JSON-RPC 的下载器，例如 aria2c、Motrix。仅使用 aria2 内核但没有开放 RPC 的软件不一定兼容。
+本指南面向 PinPinto 1.6.0 及以后版本的用户。功能适用于 Chrome、Edge 和 Firefox，可连接本机开放 aria2 JSON-RPC 的下载器，例如 aria2c、Motrix。仅使用 aria2 内核但没有开放 RPC 的软件不一定兼容。
 
 ## 功能边界
 

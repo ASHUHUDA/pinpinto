@@ -10,3 +10,10 @@
 - 为保持 700 行既有硬契约，仅抽离 ZIP 执行适配和输出摘要；协调器最终 699 行。不放宽契约测试。全量回归另修正原有 tooltip 文案期望和输入框遮挡，断言保留。
 - 验证：类型检查、177/177 Node、14/14 Chromium E2E、Chrome/Firefox 构建与生产包审计、git diff --check 均通过。无新增依赖；不推送、不发布。
 - 未验证：真实 Motrix/aria2c 和 Firefox 运行时；E2E 使用可控本机 RPC。正式说明见 docs/aria2.md，测试流程见 docs/testing.md。
+
+## 2026-10-04 · 用户明确版本交付规则
+
+- 用户要求每次功能变更同步更新版本，幅度按功能轻重；aria2 新能力从 1.5.14 升至 1.6.0，而非仅升补丁。规则写入 AGENTS.md 和项目 MEMORY.md，不擅自提升为全局偏好。
+- 同步 package.json、manifest.config.ts、popup.html、sidebar.html；pnpm-lock.yaml 不含项目根版本字段，无需修改依赖锁。
+- 新增源版本一致性测试，要求四处与 package.json 一致；已升版正式发布显式传 --version，防止 release:push 默认补丁再次递增。主版本升级另须处理发布脚本 1.x 限制。
+- 版本更正验证：6/6 release 测试、verify 的 178/178 Node、Chrome/Firefox 1.6.0 构建与生产包审计通过，git diff --check 通过。仅版本和规范变动，未重复运行 E2E；上一轮功能 E2E 为 14/14。未推送、未发布。

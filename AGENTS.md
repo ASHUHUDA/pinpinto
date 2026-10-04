@@ -48,6 +48,13 @@
 - 自动批次必须保持单活动窗口、cursor 对齐；浏览器模式下载终态先于页面压缩，aria2 模式以明确交接/明确跳过先于页面压缩。
 - aria2 密钥只放 `storage.session`，不得进入 sync、local、任务快照或页面消息；端点只允许 localhost/127.0.0.1，用可选权限授权，禁止重定向和自动重放。每次提交指定唯一 GID 防浏览器底层 POST 重发。
 
+## 版本策略
+
+- 每次功能变更必须在该次交付中更新版本号，不等发布时补改；按完整功能交付升级，不因同一功能拆成多次 commit 重复升级。
+- 小调整或兼容性修复升补丁版本；新增能力或明显功能增强升次版本并清零补丁；不兼容变更升主版本并清零次版本/补丁。主版本升级须同时处理发布脚本当前仅支持 `1.x` 的限制。
+- 同步 `package.json`、`manifest.config.ts`、`popup.html`、`sidebar.html` 的版本，并通过版本一致性测试、重新构建和生产包审计。
+- 已在功能交付中升级版本时，正式发布显式传入 `release:push -- --version=X.Y.Z`，避免默认补丁递增造成二次升版；推送与发布仍须用户确认。
+
 ## 验证命令
 
 优先使用 Windows PowerShell，并通过仓库固定的 Corepack/pnpm 版本运行命令。
@@ -77,7 +84,7 @@ corepack.cmd pnpm run test:e2e
 git diff --check
 ```
 
-正式发布统一执行 `corepack.cmd pnpm run release:push`。该命令默认递增补丁版本并原子推送 `main` 与 tag；只有用户明确保留真实交互验证时才可传 `--skip-e2e`，远端 tag workflow 仍必须通过 E2E 后才能创建 Release。
+正式发布统一使用 `corepack.cmd pnpm run release:push -- --version=X.Y.Z` 发布功能交付时已选定的版本。若未传版本，该命令会默认递增补丁版本；推送 `main` 与 tag 前仍须确认。只有用户明确保留真实交互验证时才可传 `--skip-e2e`，远端 tag workflow 仍必须通过 E2E 后才能创建 Release。
 
 ## 代码与文档约束
 

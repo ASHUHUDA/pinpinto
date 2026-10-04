@@ -48,18 +48,16 @@ What each gate proves:
 
 ## Release Publication
 
-Use the repository release command from `main`:
+Choose the version during functional delivery, before publishing from `main`:
+
+Every functional change must update the version as part of its delivery: use a patch for small compatible adjustments/fixes, a minor for new capabilities, and a major for incompatible changes. Major upgrades also require updating the release scripts, which currently validate `1.x` only. Keep `package.json`, the manifest, and both HTML badges synchronized; the Node suite checks these source versions.
+
+The command fetches `origin/main` and tags, refuses a behind or diverged branch, increments the patch version **when no explicit version is supplied**, synchronizes all version locations, runs the release gates, stages the complete non-ignored worktree, creates an annotated tag, and atomically pushes `main` with the tag. Pushing and publishing still require explicit authorization.
+
+To publish the version already updated during feature delivery without incrementing it again:
 
 ```powershell
-corepack.cmd pnpm run release:push
-```
-
-The command fetches `origin/main` and tags, refuses a behind or diverged branch, increments the patch version, synchronizes all version locations, runs the release gates, stages the complete non-ignored worktree, creates an annotated tag, and atomically pushes `main` with the tag.
-
-To publish a version that has already been synchronized in the source files:
-
-```powershell
-corepack.cmd pnpm run release:push -- --version=1.5.12
+corepack.cmd pnpm run release:push -- --version=1.6.0
 ```
 
 `--skip-e2e` is reserved for an explicit manual-test handoff. It skips only the local Playwright run; the tag-triggered GitHub Release workflow still runs deterministic E2E and will not create the Release until that gate passes.

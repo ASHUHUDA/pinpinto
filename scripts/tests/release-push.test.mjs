@@ -26,6 +26,19 @@ test('version synchronization updates exactly one manifest and HTML badge', () =
   assert.throws(() => updateHtmlVersion('<main></main>', '1.5.12'), /Expected one version badge/);
 });
 
+test('repository source versions remain synchronized with package.json', async () => {
+  const [packageSource, manifest, popup, sidebar] = await Promise.all([
+    readFile('package.json', 'utf8'),
+    readFile('manifest.config.ts', 'utf8'),
+    readFile('popup.html', 'utf8'),
+    readFile('sidebar.html', 'utf8')
+  ]);
+  const { version } = JSON.parse(packageSource);
+  assert.equal(updateManifestVersion(manifest, version), manifest, 'manifest version differs from package.json');
+  assert.equal(updateHtmlVersion(popup, version), popup, 'popup badge differs from package.json');
+  assert.equal(updateHtmlVersion(sidebar, version), sidebar, 'sidebar badge differs from package.json');
+});
+
 test('release gates include E2E by default and allow the explicit manual-test handoff', () => {
   assert.equal(getReleaseCommands(false).some((args) => args.includes('test:e2e')), true);
   assert.equal(getReleaseCommands(true).some((args) => args.includes('test:e2e')), false);

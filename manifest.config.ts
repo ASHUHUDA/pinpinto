@@ -38,7 +38,7 @@ const browserUiSection = isFirefoxTarget
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest Downloader',
-  version: '1.5.14',
+  version: '1.6.0',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions,
   // Firefox 115 supports optional host patterns via optional_permissions (the dedicated key requires 128).
