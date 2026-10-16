@@ -22,7 +22,7 @@ export const SHARED_DOWNLOAD_SETTINGS_DEFAULTS: SharedDownloadSettings = {
     autoScroll: false,
     autoBatchDownload: false,
     downloadAsZip: true,
-    singleImageDownloadMethod: 'browser',
+    singleImageDownloadMethod: 'aria2',
     batchDownloadMethod: 'browser',
     autoBatchLimit: AUTO_BATCH_DOWNLOAD_LIMIT,
     autoBatchTotalBatches: AUTO_BATCH_TOTAL_BATCHES_UNLIMITED,
@@ -36,7 +36,7 @@ export function normalizeDownloadAsZip(value: unknown): boolean {
 }
 
 export function normalizeSingleImageDownloadMethod(value: unknown): SingleImageDownloadMethod {
-    return value === 'aria2' ? 'aria2' : value === 'external' ? 'external' : 'browser';
+    return value === 'browser' ? 'browser' : value === 'external' ? 'external' : SHARED_DOWNLOAD_SETTINGS_DEFAULTS.singleImageDownloadMethod;
 }
 
 export function normalizeBatchDownloadMethod(value: unknown): BatchDownloadMethod {

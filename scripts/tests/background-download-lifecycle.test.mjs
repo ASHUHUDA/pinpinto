@@ -24,7 +24,7 @@ function installBackgroundChrome(options = {}) {
   const area = {
     async get(key) {
       if (typeof key === 'string') return { [key]: sessionValues[key] };
-      return { ...sessionValues };
+      return { ...key, ...sessionValues };
     },
     async set(update) { Object.assign(sessionValues, update); },
     async remove(key) { delete sessionValues[key]; }

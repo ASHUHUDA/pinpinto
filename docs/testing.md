@@ -73,7 +73,7 @@ What each gate proves:
 - `audit:dependencies`: installed production versions against npm bulk advisories and OSV.
 - `build:browsers`: Chrome ZIP and Firefox XPI generation.
 - `audit:production`: manifest/version/browser permissions and absence of E2E-only code in both production packages.
-- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, dynamic ARIA progress, and local aria2 RPC handoff (single/manual/auto, rejection, ambiguity, and transport replay), secret persistence across a real browser restart, content-script isolation, clear behavior, and localized icon tooltips anchored to their SVG triggers (hover/focus, collapsed/expanded aria2 settings, narrow/short viewports, no input overlap or clipping) in Chromium.
+- `test:e2e`: deterministic search classification, 80-image ZIP contents, manual ZIP, manual individual-file output, automatic ZIP, graceful stop, immediate cancel, Blob-backed single-image bytes, browser-settled cleanup, retry, keyboard flow, CSP, dynamic ARIA progress, and local aria2 RPC handoff (default single/manual, ambiguity, and transport replay), automatic browser ZIP despite a manual aria2 preference, secret persistence and retained password-field masking across a real browser restart, content-script isolation, clear behavior, and localized icon tooltips anchored to their SVG triggers (hover/focus, collapsed/expanded aria2 settings, narrow/short viewports, no input overlap or clipping) in Chromium.
 
 ## Release Publication
 
@@ -86,7 +86,7 @@ The command fetches `origin/main` and tags, refuses a behind or diverged branch,
 To publish the version already updated during feature delivery without incrementing it again:
 
 ```powershell
-corepack.cmd pnpm run release:push -- --version=1.7.1
+corepack.cmd pnpm run release:push -- --version=1.7.2
 ```
 
 `--skip-e2e` is reserved for an explicit manual-test handoff. It skips only the local Playwright run, not the requirement for full browser review before release; the tag-triggered GitHub Release workflow still runs the complete deterministic E2E suite and will not create the Release until that gate passes. Do not use this release option as a shortcut for focused bug verification.
@@ -123,7 +123,7 @@ Deterministic fixtures own correctness and CI. A blocked live Pinterest smoke ne
 
 ## Optional aria2 Downloader Smoke
 
-Follow the [aria2 setup guide](aria2.md) with an already running local Motrix or aria2c instance. Verify connection testing, card and context-menu submission, manual batches, and automatic handoff in your target browser. Check actual task creation and the downloader's default directory there. A successful RPC response does not prove image bytes reached disk. Mock RPC E2E and Firefox package builds do not replace this runtime smoke.
+Follow the [aria2 setup guide](aria2.md) with an already running local Motrix or aria2c instance. Verify connection testing, card and context-menu submission, and manual aria2 batches in your target browser. Confirm automatic downloads use browser ZIP even with a saved manual aria2 preference. Check actual task creation and the downloader's default directory there. A successful RPC response does not prove image bytes reached disk. Mock RPC E2E and Firefox package builds do not replace this runtime smoke.
 
 ## Optional External Downloader Smoke
 

@@ -100,7 +100,7 @@ test('background generic cancel does not cancel an in-flight single-image downlo
         title: 'A',
         originalFilename: 'a.png'
       },
-      settings: {}
+      settings: { singleImageDownloadMethod: 'browser' }
     }, {}, resolve);
   });
 

@@ -126,6 +126,9 @@ test('single-image Blob retry falls back from failed original candidate and writ
   }));
 
   const page = await context.newPage();
+  const settings = await openExtensionPage('popup.html');
+  await settings.evaluate(async () => chrome.storage.sync.set({ singleImageDownloadMethod: 'browser' }));
+  await settings.close();
   await page.goto('https://www.pinterest.com/search/pins/?q=single-retry', { waitUntil: 'domcontentloaded' });
   const singleButton = page.locator('.pinvault-single-download-btn');
   await expect(singleButton).toBeVisible();

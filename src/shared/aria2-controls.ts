@@ -3,11 +3,8 @@ import { normalizeBatchDownloadMethod } from './download-settings';
 import type { SupportedLanguage } from './ui-translations';
 
 export function updateAria2ModeLabels(language: SupportedLanguage): void {
-    const method = document.getElementById('batchDownloadMethod') as HTMLSelectElement | null;
     const label = document.getElementById('autoBatchLabel');
-    if (label) label.textContent = method?.value === 'aria2'
-        ? language === 'zh' ? '自动提交至 aria2' : 'Auto-submit to aria2'
-        : language === 'zh' ? '自动下载' : 'Auto download';
+    if (label) label.textContent = language === 'zh' ? '自动下载（ZIP）' : 'Auto download (ZIP)';
 }
 
 export async function bindAria2Controls(getLanguage: () => SupportedLanguage): Promise<void> {
@@ -19,6 +16,19 @@ export async function bindAria2Controls(getLanguage: () => SupportedLanguage): P
     const status = document.getElementById('aria2Status');
     if (!method || !endpoint || !secret || !clearSecret || !button || !status) return;
     const report = (en: string, zh: string) => { status.textContent = getLanguage() === 'zh' ? zh : en; };
+    let masked = false;
+    let revision = 0;
+    const showSavedSecret = (hasSecret: boolean) => {
+        masked = hasSecret;
+        secret.value = hasSecret ? '••••••••' : '';
+    };
+    secret.addEventListener('focus', () => { if (masked) secret.select(); });
+    secret.addEventListener('beforeinput', () => {
+        // A saved marker is never editable credential text, even if the caret was moved.
+        if (masked) { secret.value = ''; masked = false; revision++; }
+    });
+    secret.addEventListener('input', () => { masked = false; revision++; });
+    clearSecret.addEventListener('change', () => { revision++; });
     const updateZip = () => {
         const zip = document.getElementById('downloadAsZip') as HTMLInputElement | null;
         if (zip) zip.disabled = method.value === 'aria2';
@@ -34,12 +44,18 @@ export async function bindAria2Controls(getLanguage: () => SupportedLanguage): P
     const config = await chrome.runtime.sendMessage({ action: 'getAria2Config' });
     endpoint.value = config?.endpoint ?? DEFAULT_ARIA2_ENDPOINT;
     if (!config?.success) report('Could not load RPC settings. Try again.', '读取 RPC 设置失败，请重试。');
-    else if (config.hasSecret) report('Secret saved on this device. Blank keeps it.', '密钥已保存在本机；留空不改。');
+    else {
+        showSavedSecret(config.hasSecret === true);
+        if (config.hasSecret) report('Secret saved on this device. Masked value keeps it.', '密钥已保存在本机；掩码表示已保存。');
+    }
     document.getElementById('aria2MotrixBtn')?.addEventListener('click', () => { endpoint.value = MOTRIX_ARIA2_ENDPOINT; });
     button.addEventListener('click', async () => {
         button.disabled = true;
         try {
             const url = normalizeAria2Endpoint(endpoint.value);
+            const submittedRevision = revision;
+            const replacement = masked ? '' : secret.value;
+            const clear = clearSecret.checked;
             // Request directly in the click handler, before any await loses user activation.
             const allowed = await chrome.permissions.request({ origins: [aria2PermissionOrigin(url)] });
             if (!allowed) {
@@ -48,10 +64,11 @@ export async function bindAria2Controls(getLanguage: () => SupportedLanguage): P
             }
             report('Testing connection…', '正在测试连接…');
             const result = await chrome.runtime.sendMessage({
-                action: 'saveAndTestAria2', endpoint: url, secret: secret.value, clearSecret: clearSecret.checked
+                action: 'saveAndTestAria2', endpoint: url, clearSecret: clear,
+                ...(!clear && replacement ? { secret: replacement } : {})
             });
-            if (result?.success || result?.configSaved) {
-                secret.value = '';
+            if ((result?.success || result?.configSaved) && revision === submittedRevision) {
+                showSavedSecret(result.hasSecret === true);
                 clearSecret.checked = false;
             }
             if (result?.success) report(`Connected to aria2 ${result.version}. Settings saved.`, `已连接 aria2 ${result.version}，配置已保存。`);

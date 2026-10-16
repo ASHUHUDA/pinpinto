@@ -22,7 +22,7 @@
             </div>
             <div class="header-info">
                 <h1>PinPinto</h1>
-            <span class="badge-version">v1.7.1</span>
+            <span class="badge-version">v1.7.2</span>
             </div>
             <div class="header-actions">
                 <div class="settings-dropdown">
@@ -157,11 +157,11 @@
                 <select class="download-method-select" id="singleImageDownloadMethod">
                     <option value="browser" data-i18n="setting.singleImageBrowser">Browser</option>
                     <option value="external" data-i18n="setting.singleImageExternal">External downloader</option>
-                    <option value="aria2">aria2 RPC</option>
+                    <option value="aria2" selected>aria2 RPC</option>
                 </select>
             </label>
             <label class="download-setting-row" for="batchDownloadMethod">
-                <span class="download-setting-label" data-i18n="aria2.batchMethod">Batch / auto download</span>
+                <span class="download-setting-label" data-i18n="aria2.batchMethod">Manual batch download</span>
                 <select class="download-method-select" id="batchDownloadMethod">
                     <option value="browser" data-i18n="setting.singleImageBrowser">Browser</option>
                     <option value="aria2">aria2 RPC</option>
@@ -179,7 +179,7 @@
                             </svg>
                             <span class="settings-info-label" data-i18n="aria2.info">aria2 information</span>
                         </button>
-                        <span id="aria2Help" class="settings-tooltip" role="tooltip" data-i18n="aria2.help">Sends individual images, not ZIPs. Submission does not mean download completion. The secret stays on this device, unencrypted and unsynced, across browser restarts. Blank keeps it; select Clear secret and save to remove it.</span>
+                        <span id="aria2Help" class="settings-tooltip" role="tooltip" data-i18n="aria2.help">Auto download uses browser ZIPs. aria2 sends individual images; submission is not download completion. Secrets persist on this device, unencrypted and unsynced. Dots mean saved. Type to replace; use Clear secret to remove.</span>
                     </span>
                 </summary>
                 <label for="aria2Endpoint" data-i18n="aria2.endpoint">Local RPC URL</label>

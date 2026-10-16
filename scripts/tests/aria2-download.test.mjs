@@ -35,7 +35,7 @@ test('manual aria2 handoff deduplicates and never invokes browser/Blob or clears
   assert.equal(h.storage.current(), null);
 });
 
-test('explicit RPC rejection is skipped in an automatic window and does not block the next image', async () => {
+test('explicit RPC rejection is skipped in a manual batch and does not block the next image', async () => {
   installIndexedDb();
   const h = await harness();
   delete h.host.createAria2Client;
@@ -49,47 +49,44 @@ test('explicit RPC rejection is skipped in an automatic window and does not bloc
         ...(!url || url.endsWith('/b.jpg') ? { error: { code: 1, message: 'rejected' } } : { result: body.params[1].gid }) };
     } };
   };
-  const started = await h.coordinator.start({ mode: 'auto', targetTabId: 19, settings: { batchDownloadMethod: 'aria2' } });
-  await waitFor(() => h.browser.tabMessages.length > 0);
-  await h.coordinator.acceptAutoBatchWindow({ jobId: started.jobId, images: [image('a'), image('b'), image('c')], startOffset: 0, endOffset: 3, finalWindow: true }, 19);
+  await h.coordinator.start({ mode: 'manual', targetTabId: 19, images: [image('a'), image('b'), image('c')], settings: { batchDownloadMethod: 'aria2' } });
   const finished = await waitFor(() => completedBroadcast(h.messages)?.snapshot);
   assert.equal(finished.aria2SubmittedCount, 2);
   assert.equal(finished.aria2RejectedCount, 1);
-  assert.equal(finished.batchCursor, 3);
+  assert.equal(finished.batchCursor, 0);
   assert.equal(h.calls.length, 3);
   assert.deepEqual(h.browser.downloadCalls, []);
 });
 
-test('automatic aria2 handoff commits then advances cursor and resumes; no browser download terminal is needed', async () => {
-  const h = await harness();
+test('legacy automatic aria2 session commits then advances cursor and resumes without replaying an old window', async () => {
+  const h = await harness({ snapshot: persistedSnapshot({ mode: 'auto', outputMode: 'aria2', phase: 'scrolling', targetTabId: 19,
+    activeWindow: null, associatedDownloadIds: [], autoBatchLimit: 1, autoSessionFinished: false, totalImages: 0 }) });
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   h.host.createAria2Client = async () => ({ addUri: async (url) => { h.calls.push([url]); await gate; return '0123456789abcdef'; } });
-  const started = await h.coordinator.start({ mode: 'auto', targetTabId: 19, autoBatchLimit: 1, settings: { batchDownloadMethod: 'aria2' } });
-  await waitFor(() => h.browser.tabMessages.some(({ message }) => message.action === 'startAutoBatchSession'));
+  const started = { jobId: 'restored-job' };
+  await waitFor(() => h.browser.tabMessages.some(({ message }) => message.action === 'resumeAutoBatchSession'));
   assert.equal(await h.coordinator.acceptAutoBatchWindow({ jobId: started.jobId, images: [image('a')], startOffset: 0, endOffset: 1 }, 19), true);
   await waitFor(() => h.calls.length === 1);
   assert.equal((await h.coordinator.getSnapshot()).batchCursor, 0);
   assert.equal(h.browser.tabMessages.some(({ message }) => message.action === 'commitAutoBatchWindow'), false);
   release();
-  await waitFor(() => h.browser.tabMessages.some(({ message }) => message.action === 'resumeAutoBatchSession'));
+  await waitFor(() => h.browser.tabMessages.filter(({ message }) => message.action === 'resumeAutoBatchSession').length === 2);
   const snapshot = await h.coordinator.getSnapshot();
   assert.equal(snapshot.batchCursor, 1);
   assert.equal(snapshot.aria2SubmittedCount, 1);
   assert.equal(snapshot.activeWindow, null);
   assert.deepEqual(h.browser.downloadCalls, []);
-  assert.deepEqual(h.browser.tabMessages.filter(({ message }) => ['commitAutoBatchWindow', 'resumeAutoBatchSession'].includes(message.action)).map(({ message }) => message.action), ['commitAutoBatchWindow', 'resumeAutoBatchSession']);
+  assert.deepEqual(h.browser.tabMessages.filter(({ message }) => ['commitAutoBatchWindow', 'resumeAutoBatchSession'].includes(message.action)).map(({ message }) => message.action), ['resumeAutoBatchSession', 'commitAutoBatchWindow', 'resumeAutoBatchSession']);
   assert.equal(await h.coordinator.acceptAutoBatchWindow({ jobId: started.jobId, images: [image('b')], startOffset: 1, endOffset: 2, finalWindow: true }, 19), true);
   const finished = await waitFor(() => completedBroadcast(h.messages)?.snapshot);
   assert.equal(finished.aria2SubmittedCount, 2);
   assert.equal(finished.batchCursor, 2);
 });
 
-test('transport ambiguity stops automatic submissions without commit, cursor advance, fallback or replay', async () => {
+test('transport ambiguity stops manual submissions without fallback or replay', async () => {
   const h = await harness({ submit: async () => { throw new Error('connection lost'); } });
-  const started = await h.coordinator.start({ mode: 'auto', targetTabId: 19, settings: { batchDownloadMethod: 'aria2' } });
-  await waitFor(() => h.browser.tabMessages.length > 0);
-  await h.coordinator.acceptAutoBatchWindow({ jobId: started.jobId, images: [image('a'), image('b')], startOffset: 0, endOffset: 2 }, 19);
+  await h.coordinator.start({ mode: 'manual', targetTabId: 19, images: [image('a'), image('b')], settings: { batchDownloadMethod: 'aria2' } });
   const failed = await waitFor(async () => { const s = await h.coordinator.getSnapshot(); return s?.phase === 'failed' ? s : null; });
   assert.equal(failed.batchCursor, 0);
   assert.equal(failed.activeWindow.aria2Submission.uncertainCount, 1);
@@ -130,22 +127,24 @@ test('worker recovery never resubmits an unfinished aria2 window', async () => {
   assert.equal(h.browser.tabMessages.some(({ message }) => message.action === 'commitAutoBatchWindow'), false);
 });
 
-test('aria2 automatic handoff still requires a valid content compaction acknowledgement', async () => {
-  const h = await harness({ browser: { sendMessage: async (tabId, message) => message.action === 'commitAutoBatchWindow'
+test('legacy aria2 automatic handoff still requires a valid content compaction acknowledgement', async () => {
+  const h = await harness({ snapshot: persistedSnapshot({ mode: 'auto', outputMode: 'aria2',
+    activeWindow: activeWindow({ expectedDownloadIds: [], downloadStates: {}, hostJobId: null,
+      aria2Submission: { submittedCount: 1, rejectedCount: 0, uncertainCount: 0, remainingCount: 0, inFlight: false, done: true } }) }),
+    browser: { sendMessage: async (tabId, message) => message.action === 'commitAutoBatchWindow'
     ? { success: true, baseOffset: -1, retainedCount: 0 } : { success: true } } });
-  const start = await h.coordinator.start({ mode: 'auto', targetTabId: 19, settings: { batchDownloadMethod: 'aria2' } });
-  await waitFor(() => h.browser.tabMessages.length);
-  await h.coordinator.acceptAutoBatchWindow({ jobId: start.jobId, images: [image('a')], startOffset: 0, endOffset: 1 }, 19);
   const failed = await waitFor(async () => { const s = await h.coordinator.getSnapshot(); return s?.phase === 'failed' ? s : null; });
   assert.equal(failed.batchCursor, 0);
   assert.equal(failed.activeWindow.aria2Submission.submittedCount, 1);
   assert.equal(h.browser.tabMessages.some(({ message }) => message.action === 'resumeAutoBatchSession'), false);
 });
 
-test('graceful stop finishes the current aria2 handoff and commit without resuming or revoking downloads', async () => {
+test('graceful stop finishes the current legacy aria2 handoff without resuming or revoking downloads', async () => {
   let release;
-  const h = await harness({ submit: async () => new Promise((resolve) => { release = resolve; }) });
-  const start = await h.coordinator.start({ mode: 'auto', targetTabId: 19, settings: { batchDownloadMethod: 'aria2' } });
+  const h = await harness({ snapshot: persistedSnapshot({ mode: 'auto', outputMode: 'aria2', phase: 'scrolling', targetTabId: 19,
+    activeWindow: null, associatedDownloadIds: [], autoSessionFinished: false }),
+    submit: async () => new Promise((resolve) => { release = resolve; }) });
+  const start = { jobId: 'restored-job' };
   await waitFor(() => h.browser.tabMessages.length);
   await h.coordinator.acceptAutoBatchWindow({ jobId: start.jobId, images: [image('a')], startOffset: 0, endOffset: 1 }, 19);
   await waitFor(() => h.calls.length);
@@ -155,8 +154,7 @@ test('graceful stop finishes the current aria2 handoff and commit without resumi
   assert.equal(finished.aria2SubmittedCount, 1);
   assert.equal(finished.batchCursor, 1);
   assert.match(finished.details, /文件下载由下载器负责/);
-  assert.equal(h.browser.tabMessages.some(({ message }) => message.action === 'resumeAutoBatchSession'), false);
-  assert.deepEqual(h.browser.cancelCalls, []);
+  assert.equal(h.browser.tabMessages.filter(({ message }) => message.action === 'resumeAutoBatchSession').length, 1, 'only startup recovery may resume');
 });
 
 test('recovery commits a fully persisted aria2 handoff window without sending images again', async () => {
@@ -172,7 +170,7 @@ test('recovery commits a fully persisted aria2 handoff window without sending im
   assert.equal(h.browser.tabMessages.some(({ message }) => message.action === 'commitAutoBatchWindow'), true);
 });
 
-test('single-image aria2 submits the preferred URL and reports handoff without controlled browser registration', async () => {
+test('single-image aria2 is the default and reports handoff without controlled browser registration', async () => {
   const { SingleImageDownloadService } = await loadTsModule('src/background/single-image-download.ts');
   const calls = [];
   const service = new SingleImageDownloadService({
@@ -181,10 +179,27 @@ test('single-image aria2 submits the preferred URL and reports handoff without c
     async download() { assert.fail('browser path used'); },
     async submitAria2(...args) { calls.push(args); return '0123456789abcdef'; }
   });
-  const result = await service.start({ imageData: { id: 'a', url: 'https://i.pinimg.com/236x/a.jpg' }, settings: { singleImageDownloadMethod: 'aria2', highQuality: true } });
+  const result = await service.start({ imageData: { id: 'a', url: 'https://i.pinimg.com/236x/a.jpg' }, settings: { highQuality: true } });
   assert.deepEqual(result, { success: true, method: 'aria2', state: 'submitted', gid: '0123456789abcdef' });
   assert.equal(calls[0][0], 'https://i.pinimg.com/originals/a.jpg');
   assert.equal(calls[0][1].includes('/'), false);
+});
+
+test('unconfigured default aria2 single-image download reports rejection without browser fallback', async () => {
+  const { SingleImageDownloadService } = await loadTsModule('src/background/single-image-download.ts');
+  // Use the real configuration path to ensure no browser work starts without permission.
+  globalThis.chrome = { storage: { local: { async get() { return {}; } } },
+    permissions: { async contains() { return false; } } };
+  const service = new SingleImageDownloadService({
+    blobHost: { async start() { assert.fail('Blob fallback used'); } },
+    async registerBrowserDownload() { assert.fail('browser registration used'); }, removeTrackedDownload() {},
+    async download() { assert.fail('browser fallback used'); }
+  });
+  const result = await service.start({ imageData: image('unconfigured') });
+  assert.equal(result.success, false);
+  assert.equal(result.method, 'aria2');
+  assert.equal(result.state, 'rejected');
+  assert.match(result.error, /Save & test/);
 });
 
 test('ambiguous single submission disables retry and retains the card', async () => {

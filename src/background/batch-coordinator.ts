@@ -56,8 +56,8 @@ export class BatchCoordinator {
         const targetTabId = typeof request.targetTabId === 'number' ? request.targetTabId : senderTabId;
         const autoBatchLimit = normalizeAutoBatchLimit(request.autoBatchLimit ?? settings.autoBatchLimit);
         const autoBatchTotalBatches = normalizeAutoBatchTotalBatches(request.autoBatchTotalBatches ?? settings.autoBatchTotalBatches);
-        const outputMode = normalizeBatchDownloadMethod(settings.batchDownloadMethod) === 'aria2'
-            ? 'aria2' : mode === 'auto' ? 'zip' : normalizeDownloadAsZip(request.downloadAsZip ?? settings.downloadAsZip) ? 'zip' : 'individual';
+        const outputMode = mode === 'auto' ? 'zip' : normalizeBatchDownloadMethod(settings.batchDownloadMethod) === 'aria2'
+            ? 'aria2' : normalizeDownloadAsZip(request.downloadAsZip ?? settings.downloadAsZip) ? 'zip' : 'individual';
         const result = await this.taskManager.start({
             mode,
             outputMode,

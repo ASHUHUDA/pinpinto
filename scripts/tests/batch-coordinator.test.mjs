@@ -105,8 +105,9 @@ test('automatic windows serialize browser settlement, content commit, cursor adv
   const browser = installChrome(storage, { firstDownloadId: 901 });
   const { BatchCoordinator } = await loadTsModule('src/background/batch-coordinator.ts');
   const host = createHost(broadcasts);
+  host.createAria2Client = async () => { assert.fail('automatic downloads must not submit images to aria2'); };
   const coordinator = new BatchCoordinator(host);
-  const started = await coordinator.start({ mode: 'auto', targetTabId: 19, settings: { autoBatchLimit: 2 }, autoBatchLimit: 2 });
+  const started = await coordinator.start({ mode: 'auto', targetTabId: 19, settings: { autoBatchLimit: 2, batchDownloadMethod: 'aria2', downloadAsZip: false }, autoBatchLimit: 2 });
   await waitFor(() => browser.tabMessages.some(({ message }) => message.action === 'startAutoBatchSession'));
 
   assert.equal(await coordinator.acceptAutoBatchWindow({
@@ -115,6 +116,9 @@ test('automatic windows serialize browser settlement, content commit, cursor adv
     startOffset: 0, endOffset: 2, finalWindow: false
   }, 19), true);
   const firstPending = await waitFor(async () => (await coordinator.getSnapshot())?.activeWindow?.expectedDownloadIds.length ? await coordinator.getSnapshot() : null);
+  assert.equal(firstPending.outputMode, 'zip');
+  assert.match(browser.downloadCalls[0].options.url, /^blob:/);
+  assert.match(browser.downloadCalls[0].options.filename, /\.zip$/);
   assert.equal(firstPending.batchCursor, 0);
   assert.equal(browser.tabMessages.some(({ message }) => message.action === 'commitAutoBatchWindow'), false);
   assert.equal(browser.tabMessages.some(({ message }) => message.action === 'resumeAutoBatchSession'), false);

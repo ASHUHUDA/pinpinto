@@ -385,7 +385,7 @@ if (window.pinVaultContentLoaded) {
             await this.singleDownloads.start(imageId, singleDownloadBtn, async () => {
                 const settings = await chrome.storage.sync.get({
                     highQuality: true,
-                    singleImageDownloadMethod: 'browser'
+                    singleImageDownloadMethod: 'aria2'
                 });
                 return chrome.runtime.sendMessage({
                     action: 'downloadImage',

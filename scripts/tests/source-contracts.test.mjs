@@ -79,7 +79,7 @@ test('single-image downloads stay tagged outside batch cancellation flow', async
   assert.match(serviceSource, /output: 'file'/);
   assert.match(serviceSource, /result\.failedEntries\[0\]\?\.error/);
   assert.doesNotMatch(serviceSource, /url: input\.sourceUrl/);
-  assert.match(backgroundSource, /downloadAsZip: true,[\s\S]*?singleImageDownloadMethod: 'browser'/);
+  assert.match(backgroundSource, /downloadAsZip: true,[\s\S]*?singleImageDownloadMethod: 'aria2'/);
   assert.match(backgroundSource, /const batchHandled = this\.batchCoordinator\.handleDownloadChange\(downloadDelta, downloadInfo\);/);
   assert.match(backgroundSource, /if \(!batchHandled && !downloadInfo\?\.isBatch\) \{/);
   assert.doesNotMatch(backgroundSource, /setTimeout\([\s\S]*?activeDownloads\.delete\(downloadId\)[\s\S]*?30000/);

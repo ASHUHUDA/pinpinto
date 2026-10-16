@@ -29,7 +29,7 @@ test('only trusted extension controls configure RPC; persistent secret is not re
   const request = { action: 'saveAndTestAria2', endpoint: 'http://localhost:16800/jsonrpc', secret: 'fixture-only-secret' };
   assert.equal((await handleAria2SettingsMessage(request, { id: 'test', url: 'https://www.pinterest.com/' })).success, false);
   assert.equal(data.requests.length, 0);
-  assert.deepEqual(await handleAria2SettingsMessage(request, trusted), { success: true, version: '1.37.0' });
+  assert.deepEqual(await handleAria2SettingsMessage(request, trusted), { success: true, version: '1.37.0', hasSecret: true });
   assert.deepEqual(data.local, { pinpintoAria2Endpoint: request.endpoint });
   assert.deepEqual(data.session, {});
   assert.equal(data.db.records.get('rpcSecret'), request.secret);
@@ -46,7 +46,8 @@ test('blank secret preserves persistent value, explicit clear removes it, missin
   await handleAria2SettingsMessage({ ...base, secret: 'fixture-only-secret' }, trusted);
   await handleAria2SettingsMessage({ ...base, secret: '' }, trusted);
   assert.deepEqual(data.requests.at(-1).params, ['token:fixture-only-secret']);
-  await handleAria2SettingsMessage({ ...base, clearSecret: true }, trusted);
+  const cleared = await handleAria2SettingsMessage({ ...base, clearSecret: true }, trusted);
+  assert.equal(cleared.hasSecret, false);
   assert.deepEqual(data.session, {});
   assert.equal(data.db.records.get('rpcSecret'), '');
   assert.deepEqual(data.requests.at(-1).params, []);
@@ -70,6 +71,7 @@ test('changed endpoints reuse the saved secret and a failed connection still sav
   const failed = await handleAria2SettingsMessage({ action: 'saveAndTestAria2', endpoint: changed, secret: '' }, trusted);
   assert.equal(failed.success, false);
   assert.equal(failed.configSaved, true);
+  assert.equal(failed.hasSecret, true);
   assert.equal(data.local.pinpintoAria2Endpoint, changed);
   assert.deepEqual(data.requests.at(-1).params, ['token:fixture-only-secret']);
   assert.equal(data.db.records.get('rpcSecret'), 'fixture-only-secret');

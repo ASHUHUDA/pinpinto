@@ -4,7 +4,7 @@ export const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 
 const ARIA2_TRANSLATIONS = {
     en: {
-        'aria2.batchMethod': 'Batch / auto download',
+        'aria2.batchMethod': 'Manual batch download',
         'aria2.settings': 'aria2 connection settings',
         'aria2.endpoint': 'Local RPC URL',
         'aria2.motrix': 'Use Motrix port',
@@ -12,10 +12,10 @@ const ARIA2_TRANSLATIONS = {
         'aria2.info': 'aria2 information',
         'aria2.clearSecret': 'Clear secret',
         'aria2.test': 'Save & test',
-        'aria2.help': 'Sends individual images, not ZIPs. Submission does not mean download completion. The secret stays on this device, unencrypted and unsynced, across browser restarts. Blank keeps it; select Clear secret and save to remove it.'
+        'aria2.help': 'Auto download uses browser ZIPs. aria2 sends individual images; submission is not download completion. Secrets persist on this device, unencrypted and unsynced. Dots mean saved. Type to replace; use Clear secret to remove.'
     },
     zh: {
-        'aria2.batchMethod': '批量 / 自动下载',
+        'aria2.batchMethod': '手动批量下载',
         'aria2.settings': 'aria2 连接设置',
         'aria2.endpoint': '本机 RPC 地址',
         'aria2.motrix': '使用 Motrix 端口',
@@ -23,7 +23,7 @@ const ARIA2_TRANSLATIONS = {
         'aria2.info': 'aria2 说明',
         'aria2.clearSecret': '清除密钥',
         'aria2.test': '保存并测试',
-        'aria2.help': '逐张提交，不生成 ZIP。提交成功不代表下载完成。密钥仅存本机，不加密、不云同步，重启后保留。留空不改，勾选清除后保存。'
+        'aria2.help': '自动下载使用浏览器 ZIP。aria2 逐张提交，接收不等于下载完成。密钥仅存本机，不加密、不云同步，重启后保留。圆点表示已保存；输入新值替换，勾选清除后保存才删除。'
     }
 };
 

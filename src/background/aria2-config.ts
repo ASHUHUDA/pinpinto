@@ -22,6 +22,7 @@ export async function handleAria2SettingsMessage(request: Record<string, unknown
         return { success: false, error: 'aria2 configuration is available only in extension settings.' };
     }
     let configSaved = false;
+    let hasSecret = false;
     try {
         if (request.action === 'getAria2Config') {
             const stored = await chrome.storage.local.get(ARIA2_ENDPOINT_KEY);
@@ -38,11 +39,12 @@ export async function handleAria2SettingsMessage(request: Record<string, unknown
         if (request.clearSecret === true) await saveAria2Secret('');
         else if (request.secret) await saveAria2Secret(request.secret as string);
         else await readAria2Secret();
+        hasSecret = Boolean(await readAria2Secret());
         configSaved = true;
         const client = await createConfiguredAria2Client();
         const version = await client.getVersion();
-        return { success: true, version };
+        return { success: true, version, hasSecret };
     } catch (error) {
-        return { success: false, configSaved, error: error instanceof Aria2RpcError ? error.message : 'Could not read or save RPC settings. Check the local URL and try again.' };
+        return { success: false, configSaved, ...(configSaved ? { hasSecret } : {}), error: error instanceof Aria2RpcError ? error.message : 'Could not read or save RPC settings. Check the local URL and try again.' };
     }
 }

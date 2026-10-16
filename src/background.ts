@@ -218,7 +218,7 @@ class PinVaultProBackground {
                 highQuality: true,
                 autoScroll: false,
                 downloadAsZip: true,
-                singleImageDownloadMethod: 'browser',
+                singleImageDownloadMethod: 'aria2',
                 batchDownloadMethod: 'browser',
                 maxConcurrentDownloads: 3,
                 downloadPath: ''
@@ -410,7 +410,7 @@ class PinVaultProBackground {
             const settings = await chrome.storage.sync.get({
                 filenameFormat: 'title_date',
                 highQuality: true,
-                singleImageDownloadMethod: 'browser'
+                singleImageDownloadMethod: 'aria2'
             });
 
             // Prepare image data

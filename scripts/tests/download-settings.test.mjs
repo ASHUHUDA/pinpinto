@@ -11,7 +11,7 @@ test('shared download settings defaults include only common download settings', 
     autoScroll: false,
     autoBatchDownload: false,
     downloadAsZip: true,
-    singleImageDownloadMethod: 'browser',
+    singleImageDownloadMethod: 'aria2',
     batchDownloadMethod: 'browser',
     autoBatchLimit: 100,
     autoBatchTotalBatches: 0,
@@ -53,6 +53,6 @@ test('shared download controls normalize storage values strictly', async () => {
   assert.equal(normalizeBatchDownloadMethod('aria2'), 'aria2');
   for (const value of [undefined, null, 'external', 'zip', {}, true]) assert.equal(normalizeBatchDownloadMethod(value), 'browser');
   for (const unknownValue of [undefined, null, '', 'download-manager', true, 1, {}]) {
-    assert.equal(normalizeSingleImageDownloadMethod(unknownValue), 'browser');
+    assert.equal(normalizeSingleImageDownloadMethod(unknownValue), 'aria2');
   }
 });

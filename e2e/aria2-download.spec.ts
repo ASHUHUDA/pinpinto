@@ -1,9 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import JSZip from 'jszip';
 import { createServer } from 'node:http';
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
 import path from 'node:path';
 import { test as base, expect } from './fixtures/extension';
 import { createPinterestSearchFixture, fixtureImageSvg } from './fixtures/pinterest-search';
-import { captureDownloadCheckpoint, listDownloadsSince } from './fixtures/extension-downloads';
+import { captureDownloadCheckpoint, listDownloadsSince, waitForNewCompletedDownloads } from './fixtures/extension-downloads';
 
 type RpcFixture = {
     endpoint: string;
@@ -63,9 +65,9 @@ const test = base.extend<{ rpc: RpcFixture }>({
     }
 });
 
-async function openSearch(context: BrowserContext): Promise<Page> {
+async function openSearch(context: BrowserContext, imageBaseUrl = 'https://i.pinimg.com'): Promise<Page> {
     await context.route('https://www.pinterest.com/search/pins/**', (route) => route.fulfill({
-        status: 200, contentType: 'text/html', body: createPinterestSearchFixture(3, 0, 'https://i.pinimg.com')
+        status: 200, contentType: 'text/html', body: createPinterestSearchFixture(3, 0, imageBaseUrl)
     }));
     await context.route('https://i.pinimg.com/**', (route) => route.fulfill({
         status: 200, contentType: 'image/svg+xml', body: fixtureImageSvg(route.request().url())
@@ -82,7 +84,8 @@ async function configure(control: Page, rpc: RpcFixture) {
     await control.locator('#aria2Secret').fill('fixture-only-secret');
     await control.locator('#aria2TestBtn').click();
     await expect(control.locator('#aria2Status')).toContainText('1.37.0');
-    await expect(control.locator('#aria2Secret')).toHaveValue('');
+    await expect(control.locator('#aria2Secret')).toHaveValue('••••••••');
+    await expect(control.locator('#aria2Secret')).toHaveAttribute('type', 'password');
     await control.locator('#batchDownloadMethod').selectOption('aria2');
     await expect(control.locator('#downloadAsZip')).toBeDisabled();
     await expect.poll(() => control.evaluate(async () => (await chrome.storage.sync.get('batchDownloadMethod')).batchDownloadMethod)).toBe('aria2');
@@ -95,9 +98,16 @@ test('aria2 settings, real card clicks and manual download button hand off witho
     await control.reload({ waitUntil: 'domcontentloaded' });
     await expect(control.locator('#batchDownloadMethod')).toBeVisible();
     await configure(control, rpc);
+    const secret = control.locator('#aria2Secret');
+    await secret.focus();
+    await secret.pressSequentially('fixture-only-secret');
+    await expect(secret).toHaveValue('fixture-only-secret');
+    await control.locator('#aria2TestBtn').click();
+    await expect(control.locator('#aria2Status')).toContainText('1.37.0');
+    await expect(secret).toHaveValue('••••••••');
     const checkpoint = await captureDownloadCheckpoint(control);
-    await control.locator('#singleImageDownloadMethod').selectOption('aria2');
-    await expect.poll(() => control.evaluate(async () => (await chrome.storage.sync.get('singleImageDownloadMethod')).singleImageDownloadMethod)).toBe('aria2');
+    await expect(control.locator('#singleImageDownloadMethod')).toHaveValue('aria2');
+    await expect(control.locator('#singleImageDownloadMethod')).toBeEnabled();
     await pinterest.locator('.pinvault-single-download-btn').first().click();
     await expect(pinterest.locator('.pinvault-single-download-btn').first()).toHaveText('Sent to external downloader');
     await expect.poll(() => rpc.tasks.length).toBe(1);
@@ -121,6 +131,8 @@ test('aria2 settings, real card clicks and manual download button hand off witho
     await expect(sidebar.locator('#batchDownloadMethod')).toHaveValue('aria2');
     await expect(sidebar.locator('#singleImageDownloadMethod')).toHaveValue('aria2');
     await expect(sidebar.locator('#aria2Endpoint')).toHaveValue(rpc.endpoint);
+    await sidebar.locator('.aria2-config summary').click();
+    await expect(sidebar.locator('#aria2Secret')).toHaveValue('••••••••');
 });
 
 test('RPC secret survives a real browser restart, stays private and can be cleared without re-entering it', async ({ context, openExtensionPage, extensionId, downloadsDir, rpc }) => {
@@ -162,7 +174,7 @@ test('RPC secret survives a real browser restart, stays private and can be clear
         await expect(reopened.locator('#aria2Endpoint')).toHaveValue(rpc.endpoint);
         await reopened.locator('.aria2-config summary').click();
         await expect(reopened.locator('#aria2Status')).toContainText(/device|本机/);
-        await expect(reopened.locator('#aria2Secret')).toHaveValue('');
+        await expect(reopened.locator('#aria2Secret')).toHaveValue('••••••••');
         await reopened.locator('#aria2TestBtn').click();
         await expect(reopened.locator('#aria2Status')).toContainText('1.37.0');
         await reopened.locator('#aria2ClearSecret').check();
@@ -171,9 +183,12 @@ test('RPC secret survives a real browser restart, stays private and can be clear
         await expect(reopened.locator('#aria2ClearSecret')).not.toBeChecked();
         const cleared = await reopened.evaluate(async () => chrome.runtime.sendMessage({ action: 'getAria2Config' }));
         expect(cleared.hasSecret).toBe(false);
+        await expect(reopened.locator('#aria2Secret')).toHaveValue('');
         await reopened.reload({ waitUntil: 'domcontentloaded' });
         const stillCleared = await reopened.evaluate(async () => chrome.runtime.sendMessage({ action: 'getAria2Config' }));
         expect(stillCleared.hasSecret).toBe(false);
+        await reopened.locator('.aria2-config summary').click();
+        await expect(reopened.locator('#aria2Secret')).toHaveValue('');
     } finally {
         await restarted.close();
     }
@@ -227,22 +242,28 @@ test('lost background reply keeps an aria2 card uncertain and disables accidenta
     expect(rpc.tasks).toHaveLength(0);
 });
 
-test('aria2 automatic batches skip explicit rejection, compact acknowledged windows and respect the batch cap', async ({ context, openExtensionPage, rpc }) => {
-    rpc.rejectAt = 1;
-    const pinterest = await openSearch(context);
+test('automatic batches use browser ZIPs despite the saved manual aria2 preference and respect the batch cap', async ({ context, openExtensionPage, rpc, assetServer }) => {
+    const pinterest = await openSearch(context, assetServer.baseUrl);
     const control = await openExtensionPage('popup.html');
     await pinterest.bringToFront();
     await control.reload({ waitUntil: 'domcontentloaded' });
     await configure(control, rpc);
+    await expect(control.locator('#autoBatchLabel')).toHaveText('Auto download (ZIP)');
     const checkpoint = await captureDownloadCheckpoint(control);
     await control.locator('#autoBatchLimit').fill('1');
     await control.locator('#autoBatchTotalBatches').fill('2');
     await control.locator('label.switch').filter({ has: control.locator('#autoBatchToggle') }).click();
-    await expect.poll(() => rpc.tasks.length).toBe(2);
-    await expect(control.locator('#progressDetails')).toContainText('拒绝并跳过 1');
+    const downloads = await waitForNewCompletedDownloads(control, checkpoint, {
+        count: 2, timeoutMs: 30_000, matches: (download) => download.filename.endsWith('.zip')
+    });
     await expect(control.locator('#autoBatchToggle')).not.toBeChecked();
-    await expect(pinterest.locator('.pinvault-overlay-controls')).toHaveCount(1);
-    expect(await listDownloadsSince(control, checkpoint)).toEqual([]);
+    await expect(pinterest.locator('.pinvault-overlay-controls')).toHaveCount(0);
+    expect(rpc.tasks).toHaveLength(0);
+    expect(await listDownloadsSince(control, checkpoint)).toHaveLength(2);
+    for (const download of downloads) {
+        const zip = await JSZip.loadAsync(await readFile(download.filename));
+        expect(Object.values(zip.files).filter((entry) => !entry.dir)).toHaveLength(1);
+    }
 });
 
 test('Chromium transport replay uses the same GID and reconciles acceptance without creating duplicate downloads', async ({ context, openExtensionPage, rpc }) => {
@@ -261,15 +282,15 @@ test('Chromium transport replay uses the same GID and reconciles acceptance with
     expect(rpc.tasks[1].options.gid).toBe(rpc.tasks[2].options.gid);
 });
 
-test('aria2 automatic transport ambiguity stops with the page window retained and no later submissions', async ({ context, openExtensionPage, rpc }) => {
+test('aria2 manual transport ambiguity stops with the page retained and no later submissions', async ({ context, openExtensionPage, rpc }) => {
     rpc.dropAt = 2;
     const pinterest = await openSearch(context);
     const control = await openExtensionPage('popup.html');
     await pinterest.bringToFront();
     await control.reload({ waitUntil: 'domcontentloaded' });
     await configure(control, rpc);
-    await control.locator('#autoBatchLimit').fill('3');
-    await control.locator('label.switch').filter({ has: control.locator('#autoBatchToggle') }).click();
+    await control.locator('#selectAllBtn').click();
+    await control.locator('#downloadBtn').click();
     await expect(control.locator('#progressDetails')).toContainText('状态不明 1');
     expect(rpc.tasks).toHaveLength(2);
     await expect(pinterest.locator('.pinvault-overlay-controls')).toHaveCount(3);
