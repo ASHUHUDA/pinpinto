@@ -39,7 +39,7 @@ export function acceptSingleDownload(state: SingleDownloadState): {
     accepted: boolean;
     state: SingleDownloadState;
 } {
-    if (state.phase === 'pending' || state.phase === 'submitted' || state.phase === 'uncertain' || state.phase === 'complete') {
+    if (state.phase === 'pending' || state.phase === 'submitted' || state.phase === 'uncertain') {
         return { accepted: false, state };
     }
     return {
@@ -75,9 +75,9 @@ export function settleSingleDownload(
         return {
             ...state,
             phase: 'complete',
-            disabled: true,
+            disabled: false,
             error: null,
-            removeImageId: state.imageId
+            removeImageId: null
         };
     }
     return {
@@ -170,14 +170,18 @@ export class SingleDownloadController {
                 : state.phase === 'submitted'
                     ? 'Sent to external downloader'
                 : state.phase === 'complete'
-                    ? 'Complete'
+                    ? '✅'
                     : 'Download';
         if (label instanceof HTMLElement) label.textContent = text;
+        const icon = button.querySelector('svg');
+        if (icon) icon.style.display = state.phase === 'complete' ? 'none' : '';
 
         const detail = state.error ? `: ${state.error}` : '';
         button.title = state.phase === 'uncertain' ? `${text}${detail}` : state.phase === 'retry'
             ? `Download failed${detail}`
-            : text;
+            : state.phase === 'complete'
+                ? 'Download complete — click to download again'
+                : text;
         button.setAttribute('aria-label', button.title);
     }
 }

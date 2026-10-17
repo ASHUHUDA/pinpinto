@@ -662,11 +662,12 @@ if (window.pinVaultContentLoaded) {
                 return { success: false, removed: false, error: 'Invalid settlement state.' };
             }
             const state = this.singleDownloads.settle(imageId, settlement);
-            const removed = settlement.state === 'complete'
+            // A single-image button stays on the page after completion so it can be clicked again.
+            // Batch individual downloads have no single-button state and retain their legacy cleanup.
+            const removed = settlement.state === 'complete' && state === null
                 ? this.session.removeDownloadedImage(imageId)
                 : false;
             if (removed) {
-                this.singleDownloads.remove(imageId);
                 window.dispatchEvent(new CustomEvent('pinvaultImagesUpdated', {
                     detail: { total: this.session.imageElements.size, new: 0 }
                 }));

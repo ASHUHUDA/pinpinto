@@ -46,7 +46,7 @@ export function buildIndexedFilename(
 ): string {
     const paddedSequence = sequence < 1000 ? String(sequence).padStart(3, '0') : String(sequence);
     const extension = resolveImageExtension(url, originalFilename);
-    return `${paddedSequence}-${timestamp}.${extension}`;
+    return `PinPinto-${paddedSequence}-${timestamp}.${extension}`;
 }
 
 export function resolveImageExtension(url?: string, originalFilename?: string): string {

@@ -47,7 +47,7 @@ async function createContext({ fetchImpl, fallbackImpl, runnerDependencies = {} 
     },
     buildIndexedFilename(sequence, timestamp, url) {
       const extension = url.endsWith('.png') ? 'png' : 'jpg';
-      return `${String(sequence).padStart(3, '0')}-${timestamp}.${extension}`;
+      return `PinPinto-${String(sequence).padStart(3, '0')}-${timestamp}.${extension}`;
     },
     extractFilenameFromUrl(url) { return url.split('/').pop(); },
     formatLocalTimestamp() { return '20260714_153045'; },
@@ -120,8 +120,8 @@ test('batch download tries high quality once, falls back to the original once, a
   assert.ok(zipBlob instanceof Blob);
   const zip = await JSZip.loadAsync(await zipBlob.arrayBuffer());
   assert.deepEqual(Object.keys(zip.files).sort(), [
-    '001-20260714_153045.jpg',
-    '002-20260714_153045.png'
+    'PinPinto-001-20260714_153045.jpg',
+    'PinPinto-002-20260714_153045.png'
   ]);
   assert.equal(result.zipLeaseJobId, 'job-1:zip:0:2');
   assert.deepEqual(await context.blobHost.listActiveJobs(), ['job-1:zip:0:2']);
@@ -157,8 +157,8 @@ test('failed fetches are handed to browser downloads and an all-fallback batch d
   assert.equal(result.unresolvedCount, 0);
   assert.equal(downloadCalls.length, 0);
   assert.deepEqual(fallbackCalls.map((call) => call.filename), [
-    '001-20260714_153045.jpg',
-    '002-20260714_153045.png'
+    'PinPinto-001-20260714_153045.jpg',
+    'PinPinto-002-20260714_153045.png'
   ]);
   assert.match(context.progress.at(-1).details, /浏览器单独下载/);
 });
@@ -205,8 +205,8 @@ test('batch sequence offset keeps automatic windows globally numbered', async ()
 
   const zip = await JSZip.loadAsync(await context.blobs.get(downloadCalls[0].url).arrayBuffer());
   assert.deepEqual(Object.keys(zip.files).sort(), [
-    '101-20260714_153045.jpg',
-    '102-20260714_153045.jpg'
+    'PinPinto-101-20260714_153045.jpg',
+    'PinPinto-102-20260714_153045.jpg'
   ]);
 });
 

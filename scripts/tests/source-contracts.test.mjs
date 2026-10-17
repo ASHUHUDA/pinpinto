@@ -259,7 +259,8 @@ test('content entrypoint uses centralized discovery and exposes scoped settlemen
   assert.match(contentSource, /classifyPinterestImage\(window\.location\.href, img\)/);
   assert.match(contentSource, /case 'commitAutoBatchWindow':[\s\S]*?this\.autoBatchSession\.commitWindow\(/);
   assert.match(contentSource, /case 'settleSingleDownload':[\s\S]*?this\.settleSingleDownload\(/);
-  assert.match(contentSource, /settlement\.state === 'complete'[\s\S]*?this\.session\.removeDownloadedImage\(imageId\)/);
+  assert.match(contentSource, /settlement\.state === 'complete' && state === null[\s\S]*?this\.session\.removeDownloadedImage\(imageId\)/);
+  assert.match(contentSource, /single-image button stays on the page after completion/i);
 });
 
 test('content auto-selection is scoped to future eligible records and survives only batch-internal pauses', async () => {

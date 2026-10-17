@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { loadTsModule } from './helpers/load-ts-module.mjs';
 
-test('single download suppresses duplicate pending clicks and completes with image-scoped cleanup', async () => {
+test('single download suppresses duplicate pending clicks and keeps a completed image retryable', async () => {
   const {
     createSingleDownloadState,
     acceptSingleDownload,
@@ -24,8 +24,14 @@ test('single download suppresses duplicate pending clicks and completes with ima
 
   const complete = settleSingleDownload(accepted.state, { state: 'complete' });
   assert.equal(complete.phase, 'complete');
-  assert.equal(complete.removeImageId, 'image-1');
+  assert.equal(complete.disabled, false);
+  assert.equal(complete.removeImageId, null);
   assert.equal(complete.error, null);
+
+  const retry = acceptSingleDownload(complete);
+  assert.equal(retry.accepted, true);
+  assert.equal(retry.state.phase, 'pending');
+  assert.equal(retry.state.disabled, true);
 });
 
 test('single start rejection and later interruption remain retryable with persistent error detail', async () => {
@@ -62,7 +68,9 @@ test('single start rejection and later interruption remain retryable with persis
     { state: 'complete' }
   );
   assert.equal(completedRetry.phase, 'complete');
-  assert.equal(completedRetry.removeImageId, 'image-2');
+  assert.equal(completedRetry.disabled, false);
+  assert.equal(completedRetry.removeImageId, null);
+  assert.equal(acceptSingleDownload(completedRetry).accepted, true);
 });
 
 test('external submission is terminal for the button but never removes the page image', async () => {

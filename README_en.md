@@ -14,6 +14,11 @@ A Pinterest image collection and batch-download extension for Chrome, Edge, and 
 - Stop auto-download after the current batch or cancel it immediately
 - Control a locked target tab from either the popup or side panel
 
+## Download Location and Filenames
+- Browser download APIs accept paths relative to the browser's default download directory. Set that directory to `E:\Downloads\Media`; PinPinto's `PinPinto/...` path then resolves to `E:\Downloads\Media\PinPinto`.
+- Single-image and ZIP filenames start with `PinPinto`; image files inside ZIPs start with `PinPinto-` as well.
+- When aria2 handles a single image, its output directory is controlled by aria2; the directory convention above applies to browser downloads.
+
 See the [aria2 / Motrix guide (Chinese)](docs/aria2.md) for RPC setup, connection tests, and failure handling. RPC secrets persist on this device by default, without encryption or cloud sync. The panel retains a dot mask after saving and reopening; only an explicit clear removes the credential. Hover or focus the ⓘ icon beside the secret field for help.
 
 ## Quick Start

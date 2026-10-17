@@ -22,13 +22,13 @@ test('background filename helpers preserve extension and indexed filename behavi
   assert.equal(resolveImageExtension('https://example.com/a.png', 'original.webp'), 'webp');
   assert.equal(resolveImageExtension('https://example.com/a.png', ''), 'png');
   assert.equal(resolveImageExtension('https://example.com/no-extension', ''), 'jpg');
-  assert.equal(buildIndexedFilename(7, '20260505_101112', 'https://example.com/a.png'), '007-20260505_101112.png');
-  assert.equal(buildIndexedFilename(1000, '20260505_101112', 'https://example.com/a.jpeg'), '1000-20260505_101112.jpg');
+  assert.equal(buildIndexedFilename(7, '20260505_101112', 'https://example.com/a.png'), 'PinPinto-007-20260505_101112.png');
+  assert.equal(buildIndexedFilename(1000, '20260505_101112', 'https://example.com/a.jpeg'), 'PinPinto-1000-20260505_101112.jpg');
   assert.equal(buildSingleFilename('20260505_101112', 'https://example.com/a.tiff'), 'PinPinto-20260505_101112.tif');
 
-  const usedFilenames = new Set(['001-test.jpg', '001-test_2.jpg']);
-  assert.equal(ensureUniqueFilename('001-test.jpg', usedFilenames), '001-test_3.jpg');
-  assert.equal(usedFilenames.has('001-test_3.jpg'), true);
+  const usedFilenames = new Set(['PinPinto-001-test.jpg', 'PinPinto-001-test_2.jpg']);
+  assert.equal(ensureUniqueFilename('PinPinto-001-test.jpg', usedFilenames), 'PinPinto-001-test_3.jpg');
+  assert.equal(usedFilenames.has('PinPinto-001-test_3.jpg'), true);
 });
 
 test('background URL helpers preserve high-quality fallback and dedupe behavior', async () => {
@@ -117,5 +117,5 @@ test('single-image and batch download paths stay separated under the shared root
 
   assert.equal(singlePath, 'PinPinto/PinPinto-20260505_101112.png');
   assert.equal(zipPath, 'PinPinto/PinPinto_20260505_101112.zip');
-  assert.equal(batchEntryName, '001-20260505_101112.png');
+  assert.equal(batchEntryName, 'PinPinto-001-20260505_101112.png');
 });
