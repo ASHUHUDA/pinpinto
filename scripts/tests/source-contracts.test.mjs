@@ -269,6 +269,22 @@ test('content entrypoint uses centralized discovery and exposes scoped settlemen
   assert.match(contentSource, /single-image button stays on the page after completion/i);
 });
 
+test('popup and sidebar use standard scrollbar styling with legacy fallbacks', async () => {
+  const [popupCss, sidebarCss] = await Promise.all([
+    readWorkspaceFile('src/popup.css'),
+    readWorkspaceFile('src/sidebar.css')
+  ]);
+
+  for (const css of [popupCss, sidebarCss]) {
+    assert.match(css, /scrollbar-color:\s*var\(--scrollbar-thumb\)\s+var\(--scrollbar-track\)/);
+    assert.match(css, /scrollbar-width:\s*thin/);
+    assert.match(css, /@supports not \(scrollbar-color: auto\)/);
+  }
+  assert.match(popupCss, /overflow-y: auto/);
+  assert.match(sidebarCss, /\.sidebar-container \{[\s\S]*?overflow-y: auto[\s\S]*?scrollbar-color/);
+});
+
+
 test('context menu downloads send visible success or failure feedback', async () => {
   const backgroundSource = await readWorkspaceFile('src/background.ts');
   const contentSource = await readWorkspaceFile('src/content.ts');
@@ -284,7 +300,6 @@ test('context menu downloads send visible success or failure feedback', async ()
   assert.match(stylesSource, /\.pinvault-context-menu-feedback\.success/);
   assert.match(stylesSource, /\.pinvault-context-menu-feedback\.error/);
 });
-
 
 test('content image scanning batches DOM work across animation frames', async () => {
   const scannerSource = await readWorkspaceFile('src/content/image-scanner.ts');

@@ -6,6 +6,8 @@
     --bg-surface-hover: rgba(255, 255, 255, 0.06);
     --border-subtle: rgba(255, 255, 255, 0.08);
     --border-strong: rgba(255, 255, 255, 0.15);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.42);
+    --scrollbar-track: transparent;
     
     --text-primary: rgba(255, 255, 255, 0.95);
     --text-secondary: rgba(255, 255, 255, 0.6);
@@ -41,7 +43,9 @@ body {
     background-color: var(--bg-base);
     color: var(--text-primary);
     overflow-x: hidden;
-    overflow-y: overlay; /* sleek scrollbars */
+    overflow-y: auto;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
     user-select: none;
     position: relative;
     border-radius: var(--radius-lg);
@@ -67,18 +71,20 @@ body {
 }
 
 /* Scrollbar formatting */
-::-webkit-scrollbar {
-    width: 4px;
-}
-::-webkit-scrollbar-track {
-    background: transparent;
-}
-::-webkit-scrollbar-thumb {
-    background: var(--border-subtle);
-    border-radius: var(--radius-full);
-}
-::-webkit-scrollbar-thumb:hover {
-    background: var(--border-strong);
+@supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+        width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+        background: var(--scrollbar-track);
+    }
+    ::-webkit-scrollbar-thumb {
+        background: var(--scrollbar-thumb);
+        border-radius: var(--radius-full);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--border-strong);
+    }
 }
 
 /* HEADER */
