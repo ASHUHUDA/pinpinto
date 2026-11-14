@@ -387,15 +387,12 @@ export function cancelDownload(controller: PopupDownloadController) {
 
 export function showProgress(controller: PopupDownloadController) {
     const progressSection = document.getElementById('progressSection');
-    const progressFill = document.getElementById('progressFill');
+    const progressFill = document.getElementById('progressFill') as HTMLProgressElement | null;
     const progressText = document.getElementById('progressText');
     const progressDetails = document.getElementById('progressDetails');
 
     if (progressSection) progressSection.style.display = 'block';
-    if (progressFill) {
-        (progressFill as HTMLElement).style.width = '0%';
-        if ('setAttribute' in progressFill) progressFill.setAttribute('aria-valuenow', '0');
-    }
+    if (progressFill) progressFill.value = 0;
     if (progressText) progressText.textContent = '0%';
     if (progressDetails) progressDetails.textContent = controller.language === 'zh' ? '准备下载...' : 'Preparing download...';
 }
@@ -406,14 +403,11 @@ export function hideProgress(controller: PopupDownloadController) {
 }
 
 export function updateProgress(controller: PopupDownloadController, progress: number, details: string) {
-    const progressFill = document.getElementById('progressFill');
+    const progressFill = document.getElementById('progressFill') as HTMLProgressElement | null;
     const progressText = document.getElementById('progressText');
     const progressDetails = document.getElementById('progressDetails');
 
-    if (progressFill) {
-        (progressFill as HTMLElement).style.width = `${progress}%`;
-        if ('setAttribute' in progressFill) progressFill.setAttribute('aria-valuenow', String(progress));
-    }
+    if (progressFill) progressFill.value = Math.max(0, Math.min(100, progress));
     if (progressText) progressText.textContent = `${Math.round(progress)}%`;
     if (progressDetails) progressDetails.textContent = details;
 }

@@ -55,11 +55,11 @@ test('automatic search tail excludes recommendations and clears state after disk
   const control = await openExtensionPage('popup.html');
   control.on('pageerror', (error) => runtimeErrors.push(error.message));
   await control.evaluate(() => {
-    const progressFill = document.getElementById('progressFill');
-    const values = [Number(progressFill?.getAttribute('aria-valuenow') ?? 0)];
+    const progressFill = document.getElementById('progressFill') as HTMLProgressElement | null;
+    const values = [progressFill?.value ?? 0];
     new MutationObserver(() => {
-      values.push(Number(progressFill?.getAttribute('aria-valuenow') ?? 0));
-    }).observe(progressFill!, { attributes: true, attributeFilter: ['aria-valuenow'] });
+      values.push(progressFill?.value ?? 0);
+    }).observe(progressFill!, { attributes: true, attributeFilter: ['value'] });
     (globalThis as typeof globalThis & { pinpintoProgressValues?: number[] }).pinpintoProgressValues = values;
   });
   const targetTabId = await findPinterestTabId(control);
@@ -342,8 +342,10 @@ test('extension surfaces load without CSP errors and expose live progress semant
       await expect(page.locator('#connectionStatus')).toHaveAttribute('role', 'status');
       await expect(page.locator('#connectionStatus')).toHaveAttribute('aria-live', 'polite');
       await expect(page.locator('#progressDetails')).toHaveAttribute('aria-atomic', 'true');
-      await expect(page.locator('#progressFill')).toHaveAttribute('role', 'progressbar');
-      await expect(page.locator('#progressFill')).toHaveAttribute('aria-valuenow', '0');
+      await expect(page.locator('#progressFill')).toHaveJSProperty('value', 0);
+      await expect(page.locator('#progressFill')).toHaveAttribute('min', '0');
+      await expect(page.locator('#progressFill')).toHaveAttribute('max', '100');
+      await expect(page.locator('#progressFill')).toHaveAttribute('aria-labelledby', 'progressDetails');
 
       const settingsButton = page.locator('#settingsBtn');
       await settingsButton.focus();

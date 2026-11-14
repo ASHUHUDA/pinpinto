@@ -98,7 +98,7 @@ test('welcome page has real help links and no inline executable content or event
   }
 });
 
-test('popup and sidebar expose live status/progress semantics and synchronize aria-valuenow', async () => {
+test('popup and sidebar expose native progress semantics and synchronize progress values', async () => {
   for (const [htmlPath, sourcePath] of [
     ['popup.html', 'src/popup/download-actions.ts'],
     ['sidebar.html', 'src/sidebar/download-actions.ts']
@@ -115,15 +115,13 @@ test('popup and sidebar expose live status/progress semantics and synchronize ar
     }
 
     const progressTag = tagWithId(html, 'progressFill');
-    assert.match(progressTag, /\brole=["']progressbar["']/i);
-    assert.match(progressTag, /\baria-valuemin=["']0["']/i);
-    assert.match(progressTag, /\baria-valuemax=["']100["']/i);
-    assert.match(progressTag, /\baria-valuenow=["']0["']/i);
-    assert.match(
-      source,
-      /progressFill\.setAttribute\(['"]aria-valuenow['"],\s*String\(progress\)\)/,
-      `${sourcePath} must synchronize aria-valuenow with visible progress`
-    );
+    assert.match(progressTag, /^<progress\b/i);
+    assert.match(progressTag, /\bmin=["']0["']/i);
+    assert.match(progressTag, /\bmax=["']100["']/i);
+    assert.match(progressTag, /\bvalue=["']0["']/i);
+    assert.match(progressTag, /\baria-labelledby=["']progressDetails["']/i);
+    assert.match(source, /progressFill\.value = 0/);
+    assert.match(source, /progressFill\.value = Math\.max\(0, Math\.min\(100, progress\)\)/);
   }
 });
 
