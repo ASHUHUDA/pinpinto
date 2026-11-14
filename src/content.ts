@@ -1,7 +1,7 @@
 // Content script for PinPinto Extension
 console.log('PinPinto content script: Starting to load...');
-
 import { createOverlayControls as createImageOverlayControls } from './content/overlay-controls';
+import { showContextMenuFeedback } from './content/context-menu-feedback';
 import { AutoBatchSessionController, restoreAutoBatchSession } from './content/auto-batch-session';
 import { AutoSelectionController } from './content/auto-selection';
 import { classifyPinterestImage } from './content/image-classifier';
@@ -16,7 +16,6 @@ import { SingleDownloadController, type SingleDownloadSettlement } from './conte
 import { PINPINTO_CONTENT_STYLE_ID, PINPINTO_CONTENT_STYLE_TEXT } from './content/styles';
 
 export { };
-
 // Prevent multiple instances
 if (window.pinVaultContentLoaded) {
     console.log('PinPinto content script already loaded, skipping...');
@@ -160,6 +159,11 @@ if (window.pinVaultContentLoaded) {
                                 limit: request.limit,
                                 settings: request.settings || {}
                             }).then(() => sendResponse({ success: true }));
+                            break;
+
+                        case 'contextMenuFeedback':
+                            showContextMenuFeedback(request.kind, request.message);
+                            sendResponse({ success: true });
                             break;
 
                         case 'finishAutoBatchSession':

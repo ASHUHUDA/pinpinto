@@ -404,6 +404,15 @@ class PinVaultProBackground {
     }
 
     async handleContextMenuClick(info, tab) {
+        const sendFeedback = async (kind: 'success' | 'error', message: string) => {
+            if (typeof tab?.id !== 'number') return;
+            await chrome.tabs.sendMessage(tab.id, {
+                action: 'contextMenuFeedback',
+                kind,
+                message
+            }).catch(() => {});
+        };
+
         try {
             const imageUrl = info.srcUrl;
             if (!imageUrl || !this.isPinterestImageUrl(imageUrl)) {
@@ -425,15 +434,21 @@ class PinVaultProBackground {
                 originalFilename: this.extractFilenameFromUrl(imageUrl)
             };
 
-            // Download the image
-            await this.downloadSingleImage(imageData, settings);
+            const result = await this.downloadSingleImage(imageData, settings, tab?.id ?? null);
+            if (result.success && result.method === 'external') {
+                await this.singleDownloads.ignoreUntrackedDownload(result.downloadId);
+                await this.runtimeState.rememberExternalDownload(result.downloadId);
+            }
 
-            // Log download start instead of notification
-            console.log('Download Started:', imageData.title);
-
+            if (result.success) {
+                await sendFeedback('success', 'PinPinto download started.');
+                console.log('Download Started:', imageData.title);
+            } else {
+                await sendFeedback('error', 'PinPinto download failed. Check your settings and try again.');
+            }
         } catch (error) {
             console.error('Error handling context menu click:', error);
-            console.log('Download Failed: Failed to download image');
+            await sendFeedback('error', 'PinPinto download failed. Check your settings and try again.');
         }
     }
 

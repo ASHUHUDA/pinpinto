@@ -127,7 +127,30 @@ export const PINPINTO_CONTENT_STYLE_TEXT = `
                 box-shadow: inset 0 0 0 3px #166534;
             }
 
-            .pinvault-loading {
+            .pinvault-context-menu-feedback {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                max-width: min(360px, calc(100vw - 40px));
+                padding: 12px 16px;
+                border: 1px solid rgba(255, 255, 255, 0.75);
+                border-radius: 10px;
+                color: #fff;
+                font-size: 14px;
+                font-weight: 600;
+                line-height: 1.4;
+                z-index: 2147483647;
+                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+            }
+
+            .pinvault-context-menu-feedback.success {
+                background: rgba(16, 185, 129, 0.96);
+            }
+
+            .pinvault-context-menu-feedback.error {
+                background: rgba(220, 53, 69, 0.96);
+            }
+
                 position: fixed;
                 top: 20px;
                 right: 20px;

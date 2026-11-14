@@ -269,6 +269,23 @@ test('content entrypoint uses centralized discovery and exposes scoped settlemen
   assert.match(contentSource, /single-image button stays on the page after completion/i);
 });
 
+test('context menu downloads send visible success or failure feedback', async () => {
+  const backgroundSource = await readWorkspaceFile('src/background.ts');
+  const contentSource = await readWorkspaceFile('src/content.ts');
+  const feedbackSource = await readWorkspaceFile('src/content/context-menu-feedback.ts');
+  const stylesSource = await readWorkspaceFile('src/content/styles.ts');
+
+  assert.match(backgroundSource, /action: 'contextMenuFeedback',[\s\S]*?kind,[\s\S]*?message/);
+  assert.match(backgroundSource, /await sendFeedback\('success', 'PinPinto download started\.'/);
+  assert.match(backgroundSource, /await sendFeedback\('error', 'PinPinto download failed\./);
+  assert.match(contentSource, /case 'contextMenuFeedback':[\s\S]*?showContextMenuFeedback\(request\.kind, request\.message\)/);
+  assert.match(feedbackSource, /showContextMenuFeedback/);
+  assert.match(feedbackSource, /feedback\.setAttribute\('role', 'status'\)/);
+  assert.match(stylesSource, /\.pinvault-context-menu-feedback\.success/);
+  assert.match(stylesSource, /\.pinvault-context-menu-feedback\.error/);
+});
+
+
 test('content auto-selection is scoped to future eligible records and survives only batch-internal pauses', async () => {
   const contentSource = await readWorkspaceFile('src/content.ts');
 
