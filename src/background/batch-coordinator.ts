@@ -346,7 +346,7 @@ export class BatchCoordinator {
                 return { accepted: false, error: 'batch task is no longer active' };
             }
             const requestedFilename = buildSingleDownloadPath(request.filename);
-            this.host.rememberRequestedFilename?.(request.sourceUrl, requestedFilename);
+            await this.host.rememberRequestedFilename?.(request.sourceUrl, requestedFilename);
             const downloadId = await chrome.downloads.download({
                 url: request.sourceUrl,
                 filename: requestedFilename,

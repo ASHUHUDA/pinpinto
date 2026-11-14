@@ -42,7 +42,7 @@ type SingleImageDownloadDependencies = {
     removeTrackedDownload: (downloadId: number) => void;
     download?: (options: chrome.downloads.DownloadOptions) => Promise<number>;
     cancelDownload?: (downloadId: number) => Promise<void>;
-    rememberRequestedFilename?: (url: string, requestedFilename: string) => void;
+    rememberRequestedFilename?: (url: string, requestedFilename: string) => Promise<void>;
     createRequestId?: () => string;
 };
 
@@ -96,7 +96,7 @@ export class SingleImageDownloadService {
     ): Promise<SingleImageDownloadResult> {
         try {
             const requestedFilename = buildRequestedFilename(url, imageData.originalFilename);
-            this.dependencies.rememberRequestedFilename?.(url, requestedFilename);
+            await this.dependencies.rememberRequestedFilename?.(url, requestedFilename);
             const downloadId = await this.download({
                 url,
                 filename: requestedFilename,
@@ -148,7 +148,7 @@ export class SingleImageDownloadService {
 
             let downloadId: number;
             try {
-                this.dependencies.rememberRequestedFilename?.(result.objectUrl, requestedFilename);
+                await this.dependencies.rememberRequestedFilename?.(result.objectUrl, requestedFilename);
                 downloadId = await this.download({
                     url: result.objectUrl,
                     filename: requestedFilename,

@@ -29,8 +29,8 @@ export function createBatchIndividualDownloadQueue(options: BatchIndividualQueue
         buildIndexedFilename: options.host.buildIndexedFilename,
         extractFilenameFromUrl: options.host.extractFilenameFromUrl,
         formatLocalTimestamp: options.host.formatLocalTimestamp,
-        requestDownload: ({ url, requestedFilename }) => {
-            options.host.rememberRequestedFilename?.(url, requestedFilename);
+        requestDownload: async ({ url, requestedFilename }) => {
+            await options.host.rememberRequestedFilename?.(url, requestedFilename);
             return chrome.downloads.download({ url, filename: requestedFilename, conflictAction: 'uniquify', saveAs: false });
         },
         cancelDownload: (downloadId) => chrome.downloads.cancel(downloadId),

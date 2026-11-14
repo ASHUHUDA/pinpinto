@@ -6,7 +6,7 @@ import type { BlobJobHost } from './background/blob-runner';
 import { OFFSCREEN_MESSAGE_TARGET } from './background/offscreen-protocol';
 import { SingleDownloadRegistry } from './background/single-download-registry';
 import { cleanupOrphanSingleBlobJobs } from './background/batch-recovery';
-import { rememberBounded } from './background/early-terminal-buffer';
+import { BackgroundRuntimeState } from './background/runtime-state';
 import { handleAria2SettingsMessage, isAria2SettingsAction } from './background/aria2-config';
 import {
     SingleImageDownloadService,
@@ -32,20 +32,19 @@ import {
 } from './background/folder-path';
 
 class PinVaultProBackground {
+    // This cache is rebuilt from chrome.storage.session task records during startup.
     activeDownloads: Map<number, TrackedDownloadInfo>;
     maxConcurrentDownloads: number;
     blobHost: BlobJobHost;
     batchCoordinator: BatchCoordinator;
     singleDownloads: SingleDownloadRegistry;
     singleImageDownloads: SingleImageDownloadService;
-    externalDownloadIds: Map<number, true>;
-    requestedFilenameByUrl: Map<string, string>;
+    runtimeState: BackgroundRuntimeState;
 
     constructor() {
         this.activeDownloads = new Map();
         this.maxConcurrentDownloads = 3;
-        this.externalDownloadIds = new Map();
-        this.requestedFilenameByUrl = new Map();
+        this.runtimeState = new BackgroundRuntimeState();
         const blobHost = createBlobJobHost();
         this.blobHost = blobHost;
         this.singleDownloads = new SingleDownloadRegistry({
@@ -189,12 +188,17 @@ class PinVaultProBackground {
     setupDownloadHandlers() {
         // Monitor download progress
         chrome.downloads.onChanged.addListener((downloadDelta) => {
-            this.handleDownloadChange(downloadDelta);
+            void this.handleDownloadChange(downloadDelta).catch((error) => {
+                console.error('Error handling download change:', error);
+            });
         });
 
         // Handle download completion
         chrome.downloads.onDeterminingFilename.addListener((downloadItem, suggest) => {
-            this.handleDownloadFilename(downloadItem, suggest);
+            void this.handleDownloadFilename(downloadItem, suggest).catch((error) => {
+                console.error('Error determining download filename:', error);
+                suggest();
+            });
         });
     }
 
@@ -282,7 +286,7 @@ class PinVaultProBackground {
                     );
                     if (result.success && result.method === 'external') {
                         await this.singleDownloads.ignoreUntrackedDownload(result.downloadId);
-                        rememberBounded(this.externalDownloadIds, result.downloadId, true);
+                        await this.runtimeState.rememberExternalDownload(result.downloadId);
                         const { downloadId: _downloadId, ...response } = result;
                         sendResponse(response);
                     } else {
@@ -480,14 +484,15 @@ class PinVaultProBackground {
         }
     }
 
-    handleDownloadChange(downloadDelta) {
+    async handleDownloadChange(downloadDelta) {
+        await this.runtimeState.waitUntilReady();
         const downloadId = downloadDelta.id;
         const downloadInfo = this.activeDownloads.get(downloadId);
         const state = downloadDelta.state?.current;
 
         if (
             (state === 'complete' || state === 'interrupted')
-            && this.externalDownloadIds.delete(downloadId)
+            && await this.runtimeState.consumeExternalDownload(downloadId)
         ) {
             return;
         }
@@ -503,10 +508,11 @@ class PinVaultProBackground {
         }
     }
 
-    handleDownloadFilename(downloadItem, suggest) {
+    async handleDownloadFilename(downloadItem, suggest) {
+        await this.runtimeState.waitUntilReady();
         // Allow custom filename logic if needed
         const downloadInfo = this.activeDownloads.get(downloadItem.id);
-        const pendingFilename = this.takeRequestedFilename(downloadItem.url);
+        const pendingFilename = await this.runtimeState.takeRequestedFilename(downloadItem.url);
 
         if (downloadInfo?.requestedFilename) {
             suggest({
@@ -545,22 +551,8 @@ class PinVaultProBackground {
         return buildIndexedFilenameHelper(sequence, timestamp, url, originalFilename);
     }
 
-    rememberRequestedFilename(url, filename) {
-        if (typeof url === 'string' && url && typeof filename === 'string' && filename) {
-            this.requestedFilenameByUrl.set(url, filename);
-        }
-    }
-
-    takeRequestedFilename(url) {
-        if (typeof url === 'string' && this.requestedFilenameByUrl.has(url)) {
-            const filename = this.requestedFilenameByUrl.get(url);
-            this.requestedFilenameByUrl.delete(url);
-            return filename;
-        }
-        const first = this.requestedFilenameByUrl.entries().next().value;
-        if (!first) return undefined;
-        this.requestedFilenameByUrl.delete(first[0]);
-        return first[1];
+    async rememberRequestedFilename(url, filename) {
+        await this.runtimeState.rememberRequestedFilename(url, filename);
     }
 
     resolveImageExtension(url, originalFilename) {

@@ -38,7 +38,7 @@ export type BatchCoordinatorHost = {
     extractFilenameFromUrl: (url: string) => string;
     formatLocalTimestamp: () => string;
     broadcast: (message: Record<string, unknown>) => void | Promise<void>;
-    rememberRequestedFilename?: (url: string, requestedFilename: string) => void;
+    rememberRequestedFilename?: (url: string, requestedFilename: string) => Promise<void>;
 };
 
 export type StartBatchRequest = {

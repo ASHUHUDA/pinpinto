@@ -44,7 +44,7 @@ type BatchDownloadContext = {
     buildIndexedFilename: (sequence: number, timestamp: string, url: string, originalFilename?: string) => string;
     extractFilenameFromUrl: (url: string) => string;
     formatLocalTimestamp: () => string;
-    rememberRequestedFilename?: (url: string, requestedFilename: string) => void;
+    rememberRequestedFilename?: (url: string, requestedFilename: string) => Promise<void>;
 };
 
 type IndexedImage = BlobJobEntry & { image: BatchImage };
@@ -113,7 +113,7 @@ export async function runBatchDownload(
             context.sendProgressUpdate(batchJob, 95, '图片获取完成，正在创建浏览器下载。');
             zipFilename = buildZipDownloadPath(`PinPinto_${batchTimestamp}.zip`);
             try {
-                context.rememberRequestedFilename?.(blobResult.objectUrl, zipFilename);
+                await context.rememberRequestedFilename?.(blobResult.objectUrl, zipFilename);
                 zipDownloadId = await chrome.downloads.download({
                     url: blobResult.objectUrl,
                     filename: zipFilename,
