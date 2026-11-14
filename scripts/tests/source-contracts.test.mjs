@@ -42,6 +42,12 @@ test('Firefox manifest uses a module background script and session-storage-compa
   assert.match(manifestSource, /service_worker: 'src\/background\.ts'/);
 });
 
+test('Chrome manifest declares tabs permission for tab URL access', async () => {
+  const manifestSource = await readWorkspaceFile('manifest.config.ts');
+
+  assert.match(manifestSource, /const basePermissions = \['downloads', 'storage', 'contextMenus', 'activeTab', 'tabs'/);
+});
+
 test('offscreen permission and Vite page entry are Chromium-only', async () => {
   const manifestSource = await readWorkspaceFile('manifest.config.ts');
   const viteSource = await readWorkspaceFile('vite.config.ts');

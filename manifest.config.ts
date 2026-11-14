@@ -7,7 +7,7 @@ const browserTarget = (runtimeEnv.BROWSER_TARGET || 'chrome').toLowerCase()
 const isFirefoxTarget = browserTarget === 'firefox'
 const isE2EBuild = runtimeEnv.PINPINTO_E2E === 'true'
 
-const basePermissions = ['downloads', 'storage', 'contextMenus', 'activeTab', 'scripting', 'windows']
+const basePermissions = ['downloads', 'storage', 'contextMenus', 'activeTab', 'tabs', 'scripting', 'windows']
 const permissions = isFirefoxTarget ? basePermissions : [...basePermissions, 'sidePanel', 'offscreen']
 
 const browserUiSection = isFirefoxTarget
@@ -38,7 +38,7 @@ const browserUiSection = isFirefoxTarget
 export default defineManifest({
   manifest_version: 3,
   name: 'PinPinto - Pinterest Downloader',
-  version: '1.8.0',
+  version: '1.8.1',
   description: 'Batch download Pinterest images with auto-scroll and ZIP packaging.',
   permissions,
   // Firefox 115 supports optional host patterns via optional_permissions (the dedicated key requires 128).
