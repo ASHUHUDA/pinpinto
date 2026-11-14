@@ -84,10 +84,10 @@ test('automatic search tail excludes recommendations and clears state after disk
     .filter((entry) => !entry.dir)
     .map((entry) => entry.name)
     .sort();
-  const archiveTimestamp = /^001-(\d{8}_\d{6})\.svg$/.exec(filenames[0])?.[1];
+  const archiveTimestamp = /^PinPinto-001-(\d{8}_\d{6})\.svg$/.exec(filenames[0])?.[1];
   expect(archiveTimestamp).toBeTruthy();
   expect(filenames).toEqual(Array.from({ length: 80 }, (_, index) => (
-    `${String(index + 1).padStart(3, '0')}-${archiveTimestamp}.svg`
+    `PinPinto-${String(index + 1).padStart(3, '0')}-${archiveTimestamp}.svg`
   )));
   expect(filenames.some((name) => /recommendation/i.test(name))).toBe(false);
   const progressValues = await control.evaluate(() => (
@@ -141,8 +141,8 @@ test('single-image Blob retry falls back from failed original candidate and writ
   const control = await openExtensionPage('popup.html');
   const downloadCheckpoint = await captureDownloadCheckpoint(control);
   await singleButton.click();
-  await expect(singleButton).toBeHidden({ timeout: 30_000 });
-  await expect(page.locator('.pinvault-overlay-controls')).toHaveCount(0);
+  await expect(singleButton).toHaveAttribute('aria-label', 'Download complete — click to download again', { timeout: 30_000 });
+  await expect(page.locator('.pinvault-overlay-controls')).toHaveCount(1);
   const imageDownload = (await waitForNewCompletedDownloads(control, downloadCheckpoint, {
     count: 1,
     timeoutMs: 30_000,
@@ -201,12 +201,12 @@ test('manual ZIP and individual modes save deterministic image bytes', async ({
   const entries = Object.values(archive.files)
     .filter((entry) => !entry.dir)
     .sort((left, right) => left.name.localeCompare(right.name));
-  const zipEntryTimestamp = /^001-(\d{8}_\d{6})\.svg$/.exec(entries[0].name)?.[1];
+  const zipEntryTimestamp = /^PinPinto-001-(\d{8}_\d{6})\.svg$/.exec(entries[0].name)?.[1];
   expect(zipEntryTimestamp).toBeTruthy();
   expect(entries.map((entry) => entry.name)).toEqual([
-    `001-${zipEntryTimestamp}.svg`,
-    `002-${zipEntryTimestamp}.svg`,
-    `003-${zipEntryTimestamp}.svg`
+    `PinPinto-001-${zipEntryTimestamp}.svg`,
+    `PinPinto-002-${zipEntryTimestamp}.svg`,
+    `PinPinto-003-${zipEntryTimestamp}.svg`
   ]);
   await Promise.all(entries.map(async (entry, index) => {
     const padded = String(index + 1).padStart(3, '0');
@@ -234,12 +234,12 @@ test('manual ZIP and individual modes save deterministic image bytes', async ({
     basename(left.filename).localeCompare(basename(right.filename))
   ));
   const firstFilename = basename(indexedDownloads[0].filename);
-  const timestamp = /^001-(\d{8}_\d{6})\.svg$/.exec(firstFilename)?.[1];
+  const timestamp = /^PinPinto-001-(\d{8}_\d{6})\.svg$/.exec(firstFilename)?.[1];
   expect(timestamp).toBeTruthy();
   expect(indexedDownloads.map((download) => basename(download.filename))).toEqual([
-    `001-${timestamp}.svg`,
-    `002-${timestamp}.svg`,
-    `003-${timestamp}.svg`
+    `PinPinto-001-${timestamp}.svg`,
+    `PinPinto-002-${timestamp}.svg`,
+    `PinPinto-003-${timestamp}.svg`
   ]);
   await Promise.all(indexedDownloads.map(async (download, index) => {
     const padded = String(index + 1).padStart(3, '0');

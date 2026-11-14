@@ -7,6 +7,16 @@ async function readWorkspaceFile(relativePath) {
   return readFile(path.resolve(relativePath), 'utf8');
 }
 
+test('async download filename suggestions keep requested names', async () => {
+  const backgroundSource = await readWorkspaceFile('src/background.ts');
+
+  assert.match(
+    backgroundSource,
+    /chrome\.downloads\.onDeterminingFilename\.addListener\([\s\S]*?void this\.handleDownloadFilename\([\s\S]*?return true;/
+  );
+});
+
+
 test('popup side panel opener keeps direct window-level open path', async () => {
   const popupSource = await readWorkspaceFile('src/popup.ts');
 

@@ -199,6 +199,8 @@ class PinVaultProBackground {
                 console.error('Error determining download filename:', error);
                 suggest();
             });
+            // The filename lookup waits for chrome.storage.session before suggesting.
+            return true;
         });
     }
 
