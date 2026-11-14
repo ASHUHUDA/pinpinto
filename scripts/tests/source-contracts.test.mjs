@@ -286,6 +286,17 @@ test('context menu downloads send visible success or failure feedback', async ()
 });
 
 
+test('content image scanning batches DOM work across animation frames', async () => {
+  const scannerSource = await readWorkspaceFile('src/content/image-scanner.ts');
+  const contentSource = await readWorkspaceFile('src/content.ts');
+
+  assert.match(scannerSource, /const IMAGE_PROCESS_BATCH_SIZE = 20/);
+  assert.match(scannerSource, /for \(; nextIndex < endIndex; nextIndex\+\+\)/);
+  assert.match(scannerSource, /requestAnimationFrame\(processBatch\)/);
+  assert.match(contentSource, /scanPinterestImages\(document, \(image\) => this\.processImage\(image\), \(\) => \{/);
+});
+
+
 test('content auto-selection is scoped to future eligible records and survives only batch-internal pauses', async () => {
   const contentSource = await readWorkspaceFile('src/content.ts');
 

@@ -10,6 +10,8 @@ export const PINTEREST_IMAGE_SELECTORS = [
     '.pinWrapper img'
 ] as const;
 
+const IMAGE_PROCESS_BATCH_SIZE = 20;
+
 export function isValidPinterestImage(img: HTMLImageElement): boolean {
     const src = img.src || img.dataset.src || img.srcset || '';
     if (!src.includes('pinimg.com')) return false;
@@ -32,7 +34,8 @@ export function getHighQualityImageUrl(img: HTMLImageElement): string {
 
 export function scanPinterestImages(
     root: ParentNode,
-    processImage: (image: HTMLImageElement) => void
+    processImage: (image: HTMLImageElement) => void,
+    onComplete: () => void = () => {}
 ): void {
     const candidates = new Set<HTMLImageElement>();
     PINTEREST_IMAGE_SELECTORS.forEach((selector) => {
@@ -49,7 +52,21 @@ export function scanPinterestImages(
     root.querySelectorAll('img').forEach((image) => {
         if (isValidPinterestImage(image)) candidates.add(image);
     });
-    candidates.forEach((image) => {
-        if (!image.dataset.pinvaultProcessed) processImage(image);
-    });
+
+    const images = [...candidates];
+    let nextIndex = 0;
+    const processBatch = () => {
+        const endIndex = Math.min(nextIndex + IMAGE_PROCESS_BATCH_SIZE, images.length);
+        for (; nextIndex < endIndex; nextIndex++) {
+            const image = images[nextIndex];
+            if (!image.dataset.pinvaultProcessed) processImage(image);
+        }
+        if (nextIndex < images.length) {
+            requestAnimationFrame(processBatch);
+            return;
+        }
+        onComplete();
+    };
+
+    processBatch();
 }

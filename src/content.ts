@@ -254,19 +254,19 @@ if (window.pinVaultContentLoaded) {
             if (Date.now() < this.scanSuppressedUntil) return;
             console.log('PinPinto: Scanning for images...');
             const beforeCount = this.session.imageElements.size;
-            scanPinterestImages(document, (image) => this.processImage(image));
+            scanPinterestImages(document, (image) => this.processImage(image), () => {
+                const afterCount = this.session.imageElements.size;
+                const newImages = afterCount - beforeCount;
 
-            const afterCount = this.session.imageElements.size;
-            const newImages = afterCount - beforeCount;
+                if (newImages > 0) {
+                    console.log(`PinPinto: Found ${newImages} new images. Total: ${afterCount}`);
+                }
 
-            if (newImages > 0) {
-                console.log(`PinPinto: Found ${newImages} new images. Total: ${afterCount}`);
-            }
-
-            // Dispatch custom event to notify about image count update
-            window.dispatchEvent(new CustomEvent('pinvaultImagesUpdated', {
-                detail: { total: afterCount, new: newImages }
-            }));
+                // Dispatch custom event to notify about image count update after all batches finish.
+                window.dispatchEvent(new CustomEvent('pinvaultImagesUpdated', {
+                    detail: { total: afterCount, new: newImages }
+                }));
+            });
         }
 
         processImage(img: HTMLImageElement) {
